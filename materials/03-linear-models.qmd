@@ -1,0 +1,933 @@
+---
+title: "Predictor and response variables"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidyverse)
+library(rstatix)
+library(performance)
+library(ggResidpanel)
+library(MASS)
+library(pwr)
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| results: hide
+source(file = "setup_files/setup.R")
+```
+
+```{python}
+#| echo: false
+#| message: false
+exec(open('setup_files/setup.py').read())
+import shutup;shutup.please()
+```
+
+This chapter shows how to simulate a variable from a distribution that is conditional on other variables: in other words, how to simulate a response variable in a linear model containing one or more predictors.
+
+## Libraries and functions
+
+::: {.callout-note collapse="true"}
+## Click to expand
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, load libraries}
+#| eval: false
+
+library(tidyverse)
+library(rstatix)
+
+# These packages will be used for evaluating the models we fit to our simulated data
+library(performance)
+library(ggResidpanel)
+
+# This package is optional/will only be used for later sections in this chapter
+library(MASS)
+```
+
+## Python
+```{python, import libraries}
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+from patsy import dmatrix
+```
+
+:::
+:::
+
+## Golden toads
+
+For the examples in the materials shown here, we're going to simulate a dataset about golden toads, an extinct species of amphibians. We'll simulate various predictor variables, and their relationship to the clutch size (number of eggs) produced by a given toad.
+
+![Here's what the fancy little guys looked like! [image source](https://en.wikipedia.org/wiki/Golden_toad#/media/File:Bufo_periglenes2.jpg)](images/goldentoad.png)
+
+### Continuous predictors
+
+We'll start with continuous predictors, because these are a little easier than categorical ones, and simulate a dataset suitable for simple linear regression.
+
+#### Set seed and sample size
+
+First, we set a seed and a sample size: 
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, set seed/n}
+set.seed(20)
+
+# sample size
+n <- 60
+```
+
+## Python
+
+```{python, seed/n}
+np.random.seed(25)
+
+# sample size
+n = 60
+```
+
+:::
+
+#### Generate values of predictor variable
+
+The next step is to generate our predictor variable.
+
+There's no noise or uncertainty in our predictor (remember that residuals are always in the y direction, not the x direction), so we can just produce the values by sampling from a distribution of our choice.
+
+One of the things that can cause variation in clutch size is the size of the toad herself, so we'll use that as our continuous predictor. This sort of biological variable would probably be normally distributed, so we'll use `rnorm` to generate it.
+
+Google tells us that the average female golden toad was somewhere in the region of 42-56mm long, so we'll use that as a sensible basis for our normal distribution for our predictor variable `length`.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, generate length variable}
+length <- rnorm(n, 48, 3)
+```
+
+## Python
+
+```{python, generate predictor length}
+length = np.random.normal(48, 3, n)
+```
+:::
+
+#### Simulate average values of response variable
+
+Now, we need to simulate our response variable, `clutchsize`.
+
+We're going to do this by setting up the linear model. We'll specify a y-intercept for `clutchsize`, plus a gradient that captures how much `clutchsize` changes as `length` changes.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, set beta parameters}
+b0 <- 175
+b1 <- 2
+
+sdi <- 20
+```
+
+## Python
+
+```{python, beta params}
+b0 = 175
+b1 = 2
+
+sdi = 20
+```
+
+:::
+
+We've also added an `sdi` parameter. This captures the standard deviation *around* the model predictions that is due to other factors we're not measuring. In other words, this will determine the size of our residuals.
+
+Now, we can simulate our set of predicted values for `clutchsize`.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, simulate avg response}
+avg_clutch <- b0 + b1*length
+```
+
+## Python
+
+```{python, sim avg response}
+avg_clutch = b0 + b1*length
+```
+:::
+
+You'll notice we've just written out the equation of our model.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, visualise dataset using average response}
+tibble(length, avg_clutch) %>%
+  ggplot(aes(x = length, y = avg_clutch)) +
+  geom_point()
+```
+
+We use the `tibble` function to combine our response and predictor variables together into a single dataset.
+
+## Python
+
+```{python, visualise data with avg response}
+tempdata = pd.DataFrame({'length': length, 'avg_clutch': avg_clutch})
+
+tempdata.plot.scatter(x = 'length', y = 'avg_clutch')
+plt.show()
+```
+
+We use the `pd.DataFrame` function to stitch our arrays together into a single dataframe object with multiple columns.
+
+:::
+
+When we visualise `length` and `avg_clutch` together, you see they perfectly form a straight line. That's because `avg_clutch` doesn't contain the residuals - that comes next.
+
+#### Simulate actual values of response variable
+
+The final step is to simulate the actual values of clutch size. 
+
+We'll use `rnorm` function again, and we put `avg_clutch` in as our mean. This is because the set of actual clutch size values should be normally distributed around our set of predictions.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, simulate response}
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(clutchsize, length)
+```
+
+## Python
+
+```{python, sim response var}
+clutchsize = np.random.normal(avg_clutch, sdi, n)
+
+goldentoad = pd.DataFrame({'length': length, 'clutchsize': clutchsize})
+```
+:::
+
+#### Checking the dataset
+
+Let's make sure our dataset is behaving the way we intended.
+
+First, we'll visualise it:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, visualise final dataset}
+ggplot(goldentoad, aes(x = length, y = clutchsize)) +
+  geom_point()
+```
+
+## Python
+
+```{python, visualise the data}
+goldentoad.plot.scatter(x = 'length', y = 'clutchsize')
+plt.show()
+```
+:::
+
+And then, we'll construct a linear model - and check that our beta coefficients have been replicated to a sensible level of precision!
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, fit simple linear regression}
+lm_golden <- lm(clutchsize ~ length, goldentoad)
+
+summary(lm_golden)
+```
+
+## Python
+
+```{python, fit regression model}
+model = smf.ols(formula= "clutchsize ~ length", data = goldentoad)
+
+lm_golden = model.fit()
+print(lm_golden.summary())
+```
+:::
+
+Not bad at all. The linear model has managed to extract beta coefficients similar to the original `b0` and `b1` that we set.
+
+If you're looking to explore and understand this further, try exploring the following things in your simulation, and see how they affect the p-value and the precision of the beta estimates:
+
+-   Varying the sample size
+-   Varying the `sdi`
+-   Varying the `b1` parameter
+
+### Categorical predictors
+
+Categorical predictors are a tiny bit more complex to simulate, as the beta coefficients switch from being constants (gradients) to vectors (representing multiple means).
+
+Let's imagine that golden toads living in different ponds produce slightly different clutch sizes, and simulate some sensible data on that basis.
+
+You might find it helpful to delete variables/clear the global environment, so that nothing from your previous simulation has an unexpected impact on your new one:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, clear global environment}
+rm(list=ls())
+```
+
+## Python
+
+```{python, delete variables}
+del(avg_clutch, clutchsize, goldentoad, length, lm_golden, model, tempdata)
+```
+:::
+
+(This step is optional!)
+
+#### Parameters and predictor variable
+
+Then, we'll set up the parameters and predictor variables:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, set parameters for categorical simulation}
+set.seed(20)
+
+n <- 60
+b0 <- 175
+b1 <- 2
+b2 <- c(0, 30, -10)
+
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+```
+
+::: {.callout-tip collapse="true"}
+#### rep and c functions
+
+The `rep` and `c` functions in R (`c` short for `concatenate`) will come up quite a lot when generating predictor variables.
+
+The `rep` function takes two arguments each time: 
+
+- First, an argument containing the thing that you want repeated (which can either be a single item, or a list/vector)
+- Second, an argument containing information about how many times to repeat the first argument (there are actually multiple options for how to phrase this second argument)
+
+The `c` function is a little simpler: it combines, i.e., concatenates, all of the arguments you put into it into a single vector/list item.
+
+You can then combine these two functions together in various ways to achieve what you want.
+
+For example, these two lines of code both produce the same output:
+
+```{r, showcasing rep and c}
+c(rep("A", times = 3), rep("B", times = 3))
+rep(c("A", "B"), each = 3)
+```
+The first version asks for `"A"` to be repeated 3 times, `"B"` to be repeated 3 times, and then these two triplets to be concatenated together into one list.
+
+The second version asks us to take a list of two items, `"A", "B"`, and repeat each element 3 times each.
+
+Meanwhile, the code below will do something very different:
+
+```{r, showcasing rep and c (2)}
+rep(c("A", "B"), times = 3)
+```
+
+This line of code asks us to take the list `"A", "B"` and repeat it, as-is, 3 times. So we get a final result that alternates.
+
+This shows that choosing carefully between `times` or `each` as your second argument for the `rep` function can be absolutely key to getting the right output!
+
+Don't forget you can use `?rep` or `?c` to get more detailed information about how these functions work, if you would like it.
+:::
+
+## Python
+
+```{python, set params for cat simulation}
+np.random.seed(20)
+
+n = 60
+b0 = 175
+b1 = 2
+b2 = np.array([0, 30, -10])
+
+sdi = 20
+
+length = np.random.normal(48, 3, n)
+pond = np.repeat(["A", "B", "C"], repeats = n//3)
+```
+
+::: {.callout-tip collapse="true"}
+#### np.repeat and np.tile functions
+
+When generating categorical variables, you are essentially repeating the category names multiple times.
+
+Note the difference between these two outputs, produced using two different `numpy` functions:
+
+```{python, np.rep demo}
+np.repeat(["A", "B", "C"], repeats = n//3)
+```
+
+```{python, np.tile demo}
+np.tile(["A", "B", "C"], reps = n//3)
+```
+
+In both functions, the first argument is an list of category names, with no duplication. Then, you specify the number of repeats with either `repeats` or `reps` (for `np.repeats` vs `np.tile` respectively).
+
+However, the two functions do slightly different things:
+
+- `np.repeats` takes each element of the list and repeats it a specified number of times, before moving on to the next element
+- `np.tile` takes the entire list as-is, and repeats it as a chunk for a desired number of times
+
+In both cases we end up with an array of the same length, but the order of the category names within that list is very different.
+:::
+:::
+
+#### Simulate average values of response
+
+Up to this point, we've set up a beta coefficient for our categorical predictor, which consists of three categories. The ponds have imaginatively been named `A`, `B` and `C`.
+
+Now, exactly as we did with the continuous predictor, we will simulate a set of predicted values using the model equation. We use the equation from above, but add our extra predictor/term.
+
+However, including a categorical predictor in our model equation is a bit more complex. We can no longer simply multiply our beta coefficient by our predictor, so we have to use slightly different syntax:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, average clutch cat predictor}
+avg_clutch <- b0 + b1*length + model.matrix(~0+pond) %*% b2
+```
+
+The `model.matrix` function produces a table of 0s and 1s, which is a matrix representing the design of our experiment. In this case, it has three columns, which matches the number of categories and the length of our `b2` coefficient. 
+
+Our `b2` is also technically a matrix, just with one row. Then, `%*%` is the operator in R for matrix multiplication, to multiply these two things together.
+
+Don't worry - you don't really need to understand matrix multiplication to get used to this method. If that explanation was enough for you, you'll be just fine from here.
+
+We'll use this syntax a few more times in this chapter, so you'll learn to recognise and repeat the syntax!
+
+## Python
+
+```{python, avgclutch with cat predictor}
+# create a design matrix for the categorical predictor
+Xpond = dmatrix('0 + C(pond)', data = {'pond': pond})
+
+# use np.dot to multiply design matrix by beta coefficient
+avg_clutch = b0 + b1*length + np.dot(Xpond, b2)
+```
+
+The `dmatrix` function from `patsy` produces a table of 0s and 1s, which is a matrix representing the design of our experiment. In this case, it has three columns, which matches the number of categories and the length of our `b2` coefficient. 
+
+Our `b2` is also technically a matrix, just with one row. We use `np.dot` to multiply these matrices together.
+
+Don't worry - you don't really need to understand matrix multiplication to get used to this method. If that explanation was enough for you, you'll be just fine from here.
+
+We'll use this syntax a few more times in this chapter, so you'll learn to recognise and repeat the syntax!
+:::
+
+#### Simulate actual values of response
+
+The last step is identical to before.
+
+We sample our actual values of `clutchsize` from a normal distribution with `avg_clutch` as the mean and with a standard deviation of `sdi`:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, final dataset cat predictor}
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(clutchsize, length, pond)
+```
+
+## Python
+
+```{python, final data cat+cont preds}
+clutchsize = np.random.normal(avg_clutch, sdi, n)
+
+goldentoad = pd.DataFrame({'length': length, 'pond': pond, 'clutchsize': clutchsize})
+```
+:::
+
+#### Checking the dataset
+
+Once again, we'll visualise and model these data, to check that they look as we suspected they would.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, testing cat predictor dataset}
+lm_golden <- lm(clutchsize ~ length + pond, goldentoad)
+
+summary(lm_golden)
+
+ggplot(goldentoad, aes(x = length, y = clutchsize, colour = pond)) +
+  geom_point()
+```
+
+## Python
+
+```{python, testing cat+cont preds data}
+model = smf.ols(formula= "clutchsize ~ length + pond", data = goldentoad)
+
+lm_golden = model.fit()
+print(lm_golden.summary())
+```
+:::
+
+Has our model recreated "reality" very well? Would we draw the right conclusions from it?
+
+### Interactions
+
+Now, let's simulate an interaction effect `length:pond`.
+
+::: {.callout-note}
+Since at least one of the variables in our interaction is a categorical predictor, requiring a vector beta coefficient and the use of the `model.matrix` syntax, the interaction will also need be the same.
+
+Think of it this way: our model with an interaction term will consist of three lines of best fit, each with a different intercept *and* gradient.
+
+The difference in intercepts is captured by `b2`, and then the difference in gradients is captured by `b3` that we set now.
+:::
+
+#### Set up parameters and predictors
+
+To run this simulation, we're going to need an extra categorical beta coefficient, which we include in our initial parameters:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, parameters for simulating interaction}
+rm(list=ls())
+
+set.seed(20)
+
+n <- 60
+b0 <- 175
+b1 <- 2
+b2 <- c(0, 30, -10)
+b3 <- c(0, 0.5, -0.2)
+
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+```
+
+## Python
+
+```{python, parameters for interaction sim}
+del(length, pond, goldentoad, clutchsize, avg_clutch) # optional clean-up
+
+np.random.seed(23)
+
+n = 60
+b0 = 175
+b1 = 2
+b2 = np.array([0, 30, -10])
+b3 = np.array([0, 0.5, -0.2])
+
+sdi = 20
+
+length = np.random.normal(48, 3, n)
+pond = np.repeat(["A","B","C"], repeats = n//3)
+```
+:::
+
+#### Simulate response variable
+
+Then, we continue exactly as we did before. 
+
+We don't need to set up a new predictor for our interaction, since it uses our existing two predictors.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, simulate interaction dataset}
+avg_clutch <- b0 + b1*length + model.matrix(~0+pond) %*% b2 + model.matrix(~0+length:pond) %*% b3
+
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(clutchsize, length, pond)
+```
+
+## Python
+
+```{python, simulate dataset with interaction}
+# construct design matrices for categorical predictor & interaction
+Xpond = dmatrix('0 + C(pond)', data = {'pond': pond})
+Xpond_length = dmatrix('0 + C(pond):length', data = {'pond': pond, 'length': length})
+
+# simulate response variable in two steps
+avg_clutch = b0 + b1*length + np.dot(Xpond, b2) + np.dot(Xpond_length, b3)
+clutchsize = np.random.normal(avg_clutch, sdi, n)
+
+# stitch variables together into a data frame
+goldentoad = pd.DataFrame({'pond': pond, 'length': length, 'clutchsize': clutchsize})
+```
+:::
+
+#### Checking the dataset
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, check interaction dataset}
+ggplot(goldentoad, aes(x = length, y = clutchsize, colour = pond)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+
+lm_golden <- lm(clutchsize ~ length*pond, goldentoad)
+
+summary(lm_golden)
+```
+
+## Python
+
+```{python, check dataset with interaction}
+model = smf.ols(formula= "clutchsize ~ length * pond", data = goldentoad)
+
+lm_golden = model.fit()
+print(lm_golden.summary())
+```
+:::
+
+
+## Exercises
+
+### Including confounds
+
+::: {.callout-exercise}
+{{< level 1 >}}
+
+Confounding variables are just additional predictors that we are trying to account for (rather than interpret).
+
+This means that modelling *and* simulating confounds is identical to any other predictor.
+
+In this exercise:
+
+- Create a continuous covariate of no interest (perhaps `temperature` or `age` of toad)
+- Create a categorical covariate of no interest (perhaps `vegetation cover` or `presence of predators` at the time the toad was laying her eggs)
+- Compare models with and without the covariate of no interest included
+
+Remember that you don't need to have values that are totally biologically plausible, especially if you don't know anything about toads. We're focusing on the simulation here, not on perfect realism in the dataset!
+
+To extend further:
+
+- Simulate a dataset where a continuous covariate of no interest has an interaction with a predictor of interest
+- Compare models with and without the interaction term, to see if you're able to recreate the original parameters you set
+:::
+
+### Interactions between categorial predictors
+
+::: {.callout-exercise}
+{{< level 3 >}}
+
+Simulate an interaction effect between two categorical predictors, for example `pond:predators` (or other categorical predictors, if inspiration has struck!)
+
+You won't need any new syntax or functions, but you will need to think a little bit about what it means for two categorical variables to interact with one another. 
+
+**Hint**: think about how many means are being estimated. It might help to use the `model.matrix` function to help you figure out what your beta coefficient should look like.
+
+::: {.callout-tip collapse="true"}
+#### Worked answer
+
+For this worked answer, we'll use `pond:predators` as our interaction effect.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, simulate cat:cat interaction}
+set.seed(20)
+
+n <- 60
+b0 <- 165
+b1 <- 2               # length 
+b2 <- c(0, 30, -10)   # pond (A, B, C)
+b3 <- c(0, 20)        # presence of predator (no, yes)
+
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+
+predators <- rep(c("yes", "no"), times = n/2)
+```
+
+## Python
+
+```{python, simulate a cat:cat interaction}
+np.random.seed(23)
+
+n = 60
+b0 = 165
+b1 = 2                        # length 
+b2 = np.array([0, 30, -10])   # pond (A, B, C)
+b3 = np.array([0, 20])        # presence of predator (no, yes)
+
+sdi = 20
+
+length = np.random.normal(48, 3, n)
+pond = np.repeat(["A","B","C"], repeats = n//3)
+
+predators = np.tile(["yes","no"], reps = n//2)
+```
+:::
+
+Set up your simulation as normal. Then, figure out what `b4` (the coefficient for `pond:predators`) needs to look like.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, using model.matrix for interaction}
+#| results: hide
+model.matrix(~0 + pond:predators)
+```
+
+```{r, using model.matrix for interaction (output)}
+#| echo: false
+head(model.matrix(~0 + pond:predators))
+```
+
+## Python
+
+```{python, using dmatrix for interaction}
+Xpond_pred = dmatrix('0 + C(pond):C(predators)', data = {'pond': pond, 'predators': predators})
+```
+
+```{python, using dmatrix for interaction (output)}
+#| echo: false
+np.asarray(Xpond_pred)[:5, :]
+```
+:::
+
+The matrix is 60 rows long (we're looking at just the top few rows) and has 6 columns.
+
+Those 6 columns represent our 6 possible subgroups, telling us that our `b4` coefficient will need to be 6 elements long.
+
+The first 4 elements will be 0s, because our `b1`, `b2` and `b3` coefficients already contain values for 4 of our subgroups. We then need two additional unique numbers for the remaining 2 subgroups.
+
+::: {.callout-tip collapse="true"}
+#### A bit more explanation on b4
+
+Remember that when fitting the model, our software will choose a group as a reference group. All the values in our beta coefficients represent the difference in the mean between that reference group, and the other levels of our categorical variable.
+
+If there is no interaction between `pond:predators`, this means that the difference in group means between `pondA:predatorsno` and `pondB:predatorsno` is the same as the difference between `pondA:predatorsyes` and `pondB:predatorsyes`. (Along with the differences between `pondA` and `pondC`, as well.)
+
+This means that a single value can represent the difference between `predatorsno` and `predatorsyes` in all three of our ponds, as you see in the R plot below - the black bar is the same height for each pond.
+
+```{r, only 4 numbers needed}
+#| echo: false
+set.seed(20)
+
+n <- 6000
+b0 <- 165
+b1 <- 2               # length 
+b2 <- c(0, 30, -10)   # pond (A, B, C)
+b3 <- c(0, 20)        # presence of predator (no, yes)
+
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+
+predators <- rep(c("yes", "no"), times = n/2)
+
+avg_clutch <- b0 + model.matrix(~0+pond) %*% b2 + model.matrix(~0+predators) %*% b3
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+toads <- tibble(clutchsize, length, pond, predators)
+
+toad_means <- toads %>%
+  group_by(pond, predators) %>%
+  summarise(mean(clutchsize)) %>%
+  pull(`mean(clutchsize)`)
+
+ggplot(toads, aes(x=pond, y=clutchsize, colour=predators)) +
+  geom_boxplot(outlier.shape = NA) +
+  #stat_summary(aes(group=predators), fun = "mean", geom="point") +
+  geom_segment(x=1, xend=1, y=toad_means[1], yend=toad_means[2], linewidth=1, colour="black") +
+  geom_segment(x=2, xend=2, y=toad_means[3], yend=toad_means[4], linewidth=1, colour="black")+
+  geom_segment(x=3, xend=3, y=toad_means[5], yend=toad_means[6], linewidth=1, colour="black")
+```
+
+This plot, with the equal differences, is therefore representing a situation where there is no interaction between `pond:predator`, but there are independent main effects of `pond` and `predator`.
+
+If we include the interaction term, however, then that's no longer the case. Within each pond, there can be a completely unique difference between when predators were and weren't present.
+
+```{r, 6 numbers needed}
+#| echo: false
+set.seed(20)
+
+n <- 6000
+b0 <- 165
+b1 <- 2               # length 
+b2 <- c(0, 30, -10)   # pond (A, B, C)
+b3 <- c(0, 20)        # presence of predator (no, yes)
+b4 <- c(0, 0, 0, 0, -20, 40)
+
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+
+predators <- rep(c("yes", "no"), times = n/2)
+
+avg_clutch <- b0 + model.matrix(~0+pond) %*% b2 + model.matrix(~0+predators) %*% b3 + model.matrix(~0+pond:predators) %*% b4
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+toads <- tibble(clutchsize, length, pond, predators)
+
+toad_means <- toads %>%
+  group_by(pond, predators) %>%
+  summarise(mean(clutchsize)) %>%
+  pull(`mean(clutchsize)`)
+
+ggplot(toads, aes(x=pond, y=clutchsize, colour=predators)) +
+  geom_boxplot(outlier.shape = NA) +
+  #stat_summary(aes(group=predators), fun = "mean", geom="point") +
+  geom_segment(x=1, xend=1, y=toad_means[1], yend=toad_means[2], linewidth=1, colour="black") +
+  geom_segment(x=2, xend=2, y=toad_means[3], yend=toad_means[4], linewidth=1, colour="black")+
+  geom_segment(x=3, xend=3, y=toad_means[5], yend=toad_means[6], linewidth=1, colour="black")
+```
+
+So, each of our 5 non-reference subgroups will have a completely unique difference in means from our reference subgroup. This means our simulation needs to provide 6 unique values across our beta coefficients.
+
+In the code above, we've already specified 4 values:
+
+- `b0`, the baseline mean of our reference group `pondA:predatorsno`
+- `b2`, containing two numbers; these capture the difference between the reference group and `pondB:predatorsno`/`pondC:predatorsno`
+- `b3`, containing one number; this captures the difference between the reference group and `pondA:predatorsyes`
+
+We still need two more numbers, to capture the difference between the reference group and `pondB:predatorsyes`/`pondC:predatorsyes`.
+
+(We can ignore `b1` for now, as it has nothing to do with this interaction. Since `length` has no interactions with other variables, we are setting things up such that all 6 subgroups have an identical `clutchsize ~ length` relationship within them.)
+:::
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, adding b4}
+b4 <- c(0, 0, 0, 0, -20, 40)
+```
+
+## Python
+
+```{python, b4 added}
+b4 = np.array([0, 0, 0, 0, -20, 40])
+```
+:::
+
+Since there are 6 subgroups, and the first 4 from our model design matrix are already dealt with, we only need two additional numbers. The other groups don't need to be adjusted further.
+
+Finally, we simulate our response variable, and then we can check how well our model does at recovering these parameters.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, catching up on the simulation}
+#| echo: false
+set.seed(20)
+
+n <- 60
+b0 <- 165
+b1 <- 2               # length 
+b2 <- c(0, 30, -10)   # pond (A, B, C)
+b3 <- c(0, 20)        # presence of predator (no, yes)
+
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+
+predators <- rep(c("yes", "no"), times = n/2)
+```
+
+
+```{r, finishing iteraction simulation goldentoads}
+b4 <- c(0, 0, 0, 0, -20, 40)
+
+avg_clutch <- b0 + model.matrix(~0+pond) %*% b2 + model.matrix(~0+predators) %*% b3 + model.matrix(~0+pond:predators) %*% b4
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+toads <- tibble(clutchsize, length, pond, predators)
+
+lm_toads <- lm(clutchsize ~ length + pond * predators, toads)
+
+summary(lm_toads)
+
+check_model(lm_toads)
+```
+
+## Python
+
+```{python, catch up on simulation so far}
+#| echo: false
+
+np.random.seed(23)
+
+n = 60
+b0 = 165
+b1 = 2                        # length 
+b2 = np.array([0, 30, -10])   # pond (A, B, C)
+b3 = np.array([0, 20])        # presence of predator (no, yes)
+
+sdi = 20
+
+length = np.random.normal(48, 3, n)
+pond = np.repeat(["A","B","C"], repeats = n//3)
+
+predators = np.tile(["yes","no"], reps = n//2)
+```
+
+```{python, full goldentoads simulation with interactions}
+b4 = np.array([0, 0, 0, 0, -20, 40])
+
+Xpond = dmatrix('0 + C(pond)', data = {'pond': pond})
+Xpred = dmatrix('0 + C(predators)', data = {'predators': predators})
+Xpond_pred = dmatrix('0 + C(pond):C(predators)', data = {'pond': pond, 'predators': predators})
+
+# simulate response variable in two steps
+avg_clutch = b0 + b1*length + np.dot(Xpond, b2) + np.dot(Xpred, b3) + np.dot(Xpond_pred, b4)
+clutchsize = np.random.normal(avg_clutch, sdi, n)
+
+# stitch variables together into a data frame
+goldentoad = pd.DataFrame({'pond': pond, 'length': length, 'clutchsize': clutchsize})
+```
+:::
+:::
+:::
+
+## Summary
+
+In this chapter, we started by simulating two-dimensional data and have worked up to three- or four-dimensional data, suitable for use in linear modelling.
+
+In all cases, we start by simulating our predictor variable(s). Then, we can simulate our response variable as a function of the predictor variable(s) via a linear model equation, with residuals added.
+
+By definition, the assumptions of the linear model will be always be met, because we are in control of the nature of the underlying population. 
+
+However, our model may or may not do a good job of "recovering" the original beta coefficients we specified, depending on the sample size and the amount of error we introduce in our simulation.
+
+::: {.callout-tip}
+#### Key Points
+
+-   Predictor variables can be simulated from different distributions, with no errors associated
+-   Response variables should be simulated with errors/residuals from the normal distribution
+-   Continuous predictors require a constant beta coefficient and simple multiplication to simulate them
+-   While categorical predictors require vector coefficients and a model matrix to simulate them
+-   Any interaction term containing a categorical predictor, must also be treated as categorical when simulating
+:::

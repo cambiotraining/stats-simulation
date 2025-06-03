@@ -1,0 +1,156 @@
+---
+title: "Non-continuous response variables"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidyverse)
+library(rstatix)
+library(performance)
+library(ggResidpanel)
+library(MASS)
+library(pwr)
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| results: hide
+source(file = "setup_files/setup.R")
+```
+
+```{python}
+#| echo: false
+#| message: false
+exec(open('setup_files/setup.py').read())
+import shutup;shutup.please()
+```
+
+This section of the course teaches you how to simulate simple biological datasets, including categorical predictors, and continuous predictors and interaction effects. The materials then briefly introduce how this method can be used to help design experiments.
+
+Currently, this chapter is written only in R. Python code will be added at a later date.
+
+## Libraries and functions
+
+::: {.callout-note collapse="true"}
+## Click to expand
+
+::: {.panel-tabset group="language"}
+## R
+
+### Libraries
+
+```{r}
+#| eval: false
+
+library(tidyverse)
+library(rstatix)
+library(performance)
+library(ggResidpanel)
+library(MASS)
+```
+:::
+:::
+
+In this chapter, we'll look at how to take the simulation methods we've learned so far to 
+
+## A quick refresher on GLMs
+
+
+
+## Binary response variable
+
+We'll start with a binary response variable. We'd use a logistic regression for these data.
+
+The first part of our simulation looks very familiar: set the seed, sample size, and beta coefficients.
+
+The nature of the beta coefficients are a little different, however. Our $\beta_0$ is no longer a direct "baseline" value of $y$; instead, it is on the log-odds scale. 
+
+::: {.callout-note collapse="true"}
+### More about log-odds
+
+The link function in a GLM for binary response variables is known as the logit function. We use it as the link function because it maps probability values bounded between $(0,1)$ onto real numbers in the range $(\infty, -\infty)$. In other words, it maps probability values onto a continuous scale.
+
+When we fit a logistic regression, we use the inverse link function which sends things back in the other direction. So, we take the output of the predictions of a linear model, which are continuous, and embed them inside this inverse link function to map them onto probability values between $(0,1)$, to match our response variable's distribution.
+
+Because of maths that we won't get into here (phew), the logit function is equal to the logarithm of the odds, $\frac{p}{1-p}$, where $p$ is the probability.
+
+Hence, the logit function is sometimes referred to as log-odds.
+:::
+
+Likewise, our $\beta_1$ is no longer a simple gradient that captures how $y$ changes as $x$ changes. Instead, it represents how the *probability* that $y = 1$ (i.e., that we get a "success") is changing as $x$ is changing.
+
+::: {.panel-tabset group="language"}
+## R
+```{r}
+set.seed(20)
+
+n <- 60               
+
+# intercept: log-odds scale
+b0 <- -1.5
+# effect of predictor on probability
+b1 <- 0.08
+
+x <- rnorm(n, 48, 3)
+```
+:::
+
+As we did before, we simulate our response variable in two stages.
+
+Previously, at stage 1, we simulated the average value of $y$ (i.e., values with no residuals added yet). This time, instead of predicted $y$ values, we're now going to simulate a set of probabilities that $y = 1$. They will all be a little different, depending on the value of $x$.
+
+Then, we simulate our actual $y$ values. We use the binomial distribution, which takes three parameters: sample size `n`, number of trials `size` (which, for our binary outcomes, is always 1), and the probability of "success" on each trial.
+
+::: {.panel-tabset group="language"}
+## R
+```{r}
+# Compute probability of y = 1 using logistic transformation
+p_y <- plogis(b0 + b1 * x)  # plogis() = logistic function
+
+# Generate binary outcomes using a Bernoulli distribution
+y <- rbinom(n, size = 1, prob = p_y)  
+
+```
+:::
+
+Now, we can `tibble()` together our dataset and explore it.
+
+::: {.panel-tabset group="language"}
+## R
+```{r}
+binary_data <- tibble(x, y)
+
+glm_binary <- glm(y ~ x, binary_data, family = "binomial")
+
+```
+:::
+
+## Proportional response variable (binomial)
+
+
+## Proportional response variable (beta)
+
+
+## Count data
+
+### Poisson distribution
+
+### Negative binomial distribution
+
+
+## Zero-inflated count data
+
+
+## Summary
+
+::: {.callout-tip}
+#### Key Points
+
+-   Datasets can be simulated, by setting up the underlying distribution and sampling randomly from it
+-   You can sample from different types of distributions, with varying parameters
+-   These simulated datasets can be used for checking your experimental design, and/or testing your analysis pipeline
+-   Simulations can also be used to perform power analyses
+:::

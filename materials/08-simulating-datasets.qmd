@@ -1,0 +1,709 @@
+---
+title: "Simulating Datasets"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidyverse)
+library(rstatix)
+library(performance)
+library(ggResidpanel)
+library(MASS)
+library(pwr)
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| results: hide
+source(file = "setup_files/setup.R")
+```
+
+```{python}
+#| echo: false
+#| message: false
+exec(open('setup_files/setup.py').read())
+import shutup;shutup.please()
+```
+
+This section of the course teaches you how to simulate simple biological datasets, including categorical predictors, and continuous predictors and interaction effects. The materials then briefly introduce how this method can be used to help design experiments.
+
+Currently, this chapter is written only in R. Python code will be added at a later date.
+
+## Libraries and functions
+
+::: {.callout-note collapse="true"}
+## Click to expand
+
+::: {.panel-tabset group="language"}
+## R
+
+### Libraries
+
+```{r}
+#| eval: false
+
+library(tidyverse)
+library(rstatix)
+
+# These packages will be used for evaluating the models we fit to our simulated data
+library(performance)
+library(ggResidpanel)
+
+# This package is optional/will only be used for later sections in this chapter
+library(MASS)
+```
+:::
+:::
+
+## Drawing samples from distributions
+
+The first thing we need to get comfortable with is random sampling, i.e., drawing a number of datapoints from an underlying distribution with known parameters.
+
+(Remember that distributions have parameters that describe their characteristics/shape; when we calculate descriptive statistics in datasets, we are estimating those parameters.)
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+rnorm(n = 100, mean = 0, sd = 1)
+```
+
+This is the `rnorm` function. It takes three arguments. The first is the number of datapoints (n) that you'd like to draw. The second and third arguments are the two important parameters that describe the shape of the underlying distribution: the mean and the standard deviation.
+
+Now, rather than just getting a string of numbers, let's visualise the dataset we've sampled.
+
+We'll use the base R `hist` function for this to keep things simple:
+
+```{r}
+rnorm(100, 0, 1) %>%
+  hist()
+```
+:::
+
+Rerun the last line of code multiple times. What happens?
+
+:::{.callout-note collapse="true"}
+## Setting a seed
+
+You may have noticed that when we repeat the above code over and over, we are sampling a different random subset of data points each time.
+
+Sometimes, it's useful for us to be able to sample the *exact* set of data points more than once, however.
+
+To achieve this, we can use the `set.seed` function.
+
+Run the following code several times in a row, and you'll see the difference:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+#| eval: false
+set.seed(20)
+
+rnorm(100, 0, 1) %>%
+  hist()
+```
+:::
+
+You can choose any number you like for the seed. All that matters is that you return to that same seed number, if you want to recreate that dataset.
+:::
+
+### Revisiting Shapiro-Wilk
+
+To help link this sampling procedure back to some statistics that you might be familiar with, let's use it to explore the Shapiro-Wilk test. It's a null hypothesis significance test, used to help us decide whether a sample has been drawn from a normally-distributed underlying population.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+set.seed(200)
+
+rnorm(100, 0, 1) %>%
+  hist()
+
+rnorm(100, 0, 1) %>%
+  shapiro.test()
+```
+:::
+
+As expected, these data generate an insignificant Shapiro-Wilk test: we retain the null hypothesis, and infer that the data have come from a normal distribution. We know this is true, so we can confirm we have a true negative result.
+
+However, let's look at a different seed. Note that we're keeping everything else identical about the code, including the underlying parameters/nature of the distribution.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+set.seed(20)
+
+rnorm(100, 0, 1) %>%
+  hist()
+
+rnorm(100, 0, 1) %>%
+  shapiro.test()
+```
+:::
+
+This test gives us a significant result - suggesting non-normality - even though we know full well that the underlying distribution is normal, because we made it so!
+
+What's happened? Well, this is a classic case of a false positive error: we reject the null hypothesis that the population is normal, even though it was actually true. We just got unlucky that the sample from seed 20 is behaving a bit unusually, so we make the wrong inference.
+
+Let's compare this to situations where we know that the null hypothesis is false, i.e., the underlying population isn't normal.
+
+This also gives us the chance to introduce the `runif` function, which works similarly to `rnorm`. It samples from a uniform distribution, with a specific minimum and maximum that we set as the parameters/arguments for the function:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+set.seed(20)
+
+runif(100, min = 0, max = 1) %>%
+  hist()
+
+runif(100, 0, 1) %>%
+  shapiro.test()
+```
+:::
+
+As expected, we are told that these data are very unlikely to occur if the null hypothesis is true. This is a true positive result: we correctly infer that the underlying distribution is not normal.
+
+But, just as we showed that the Shapiro-Wilk test can make a false positive error, it can also make a false negative error (missing a real result).
+
+To force this to occur, we're going to make the test deliberately under-powered, by drastically reducing the sample size:
+
+::: {.panel-tabset group="language"}
+## R
+```{r}
+set.seed(20)
+
+runif(10, min = 0, max = 1) %>%
+  hist()
+
+runif(10, 0, 1) %>%
+  shapiro.test()
+```
+:::
+
+And there we have it - a false negative error! Even though the underlying population isn't normal, the "signal" (the non-normality) isn't strong enough to overcome the noisiness of a small dataset.
+
+As an exercise, try creating normal QQ plots for each of these datasets, by using the base R `qqnorm` function, like so.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+set.seed(20)
+
+rnorm(100, 0, 1) %>%
+  qqnorm()
+```
+:::
+
+Compare these QQ plots with the Shapiro-Wilk test results. Do you think you would make different decisions using the two methods?
+
+
+## Simulating a continuous predictor
+
+Now that the QQ plot propaganda is out of the way, let's extend the simulations by making our dataset two-dimensional (rather than a single dimension/list of data points).
+
+Specifically, let's simulate a situation where one continuous variable predicts another. This is the situation that occurs in a simple linear regression.
+
+To simulate this situation, and all the others below it in this chapter, we will start by setting a seed. We'll also set a value of n straight away.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+set.seed(20)
+
+# sample size
+n <- 60
+```
+:::
+
+Now, we're going to generate our predictor variable. There's no noise or uncertainty in our predictor (remember that residuals are always in the y direction, not the x direction), so we can just produce the values by sampling from a distribution of our choice.
+
+Depending on the nature of the variable we're simulating, we might think that various different distributions are more appropriate or representative.
+
+For the example here, we're going to simulate a dataset about golden toads, an extinct species of amphibians. 
+
+Here's what they looked like - pretty fancy guys, no?
+
+![There's space for you both, Jack!](images/goldentoads.jpg)
+
+Our response variable will be the clutch size (number of eggs). 
+
+One of the things that can cause variation in clutch size is the size of the toad herself, so we'll use that as our continuous predictor, and we'll sample it from a normal distribution.
+
+Google tells us that the average female golden toad was somewhere in the region of 42-56mm long, so we'll use that as a sensible basis for our normal distribution for our predictor variable `length`.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+length <- rnorm(n, 48, 3)
+```
+:::
+
+Now, we need to simulate our response variable, `clutchsize`.
+
+We're going to do this by setting up the linear model. We'll specify a y-intercept for `clutchsize`, plus a gradient that captures how much `clutchsize` changes as `length` changes.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+b0 <- 175
+b1 <- 2
+
+sdi <- 20
+```
+:::
+
+We've also added an `sdi` parameter. This captures the standard deviation *around* the model predictions that is due to other factors we're not measuring. In other words, this will determine the size of our residuals.
+
+Now, we can simulate our set of predicted values for `clutchsize`.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+avg_clutch <- b0 + b1*length
+```
+:::
+
+You'll notice we've just written out the equation of our model.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+tibble(length, avg_clutch) %>%
+  ggplot(aes(x = length, y = avg_clutch)) +
+  geom_point()
+```
+:::
+
+When we visualise `length` and `avg_clutch` together, you see they perfectly form a straight line. That's because `avg_clutch` doesn't contain the residuals - that comes next.
+
+The final step is to simulate the actual values of clutch size. 
+
+We'll use `rnorm` function again, and we put `avg_clutch` in as our mean. This is because the set of actual clutch size values should be normally distributed around our set of predictions - this is what we mean when we say that the residuals should be normally distributed!
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(clutchsize, length)
+```
+:::
+
+Then we use the `tibble` function to combine our response and predictor variables together into a dataset that we can explore.
+
+### Checking our dataset
+
+Let's make sure our dataset is behaving the way we intended.
+
+First, we'll visualise it:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+ggplot(goldentoad, aes(x = length, y = clutchsize)) +
+  geom_point()
+```
+:::
+
+And then, we'll construct a linear model - and check that our beta coefficients have been replicated to a sensible level of precision!
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+lm_golden <- lm(clutchsize ~ length, goldentoad)
+
+summary(lm_golden)
+```
+:::
+
+Not bad at all. The linear model has managed to extract beta coefficients very close to the original `b0` and `b1` that we set.
+
+If you're looking to explore and understand this further, try exploring the following things in your simulation, and see how they affect the p-value and the precision of the beta estimates:
+
+-   Varying the sample size
+-   Varying the `sdi`
+-   Varying the `b1` parameter
+
+## Simulating a categorical predictor
+
+Categorical predictors are a tiny bit more complex to simulate, as the beta coefficients switch from being constants (gradients) to vectors (representing multiple means).
+
+Let's imagine that golden toads living in different ponds produce slightly different clutch sizes, and simulate some sensible data on that basis.
+
+Before we do anything else, let's clear our global environment so that nothing from our previous simulation has an unexpected impact on our new one:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+rm(list=ls())
+```
+:::
+
+Then, we'll set up the parameters and predictor variables:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+set.seed(20)
+
+n <- 60
+b0 <- 175
+b1 <- 2
+b2 <- c(0, 30, -10)
+
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+```
+:::
+
+We've set up a beta coefficient for our categorical predictor, which consists of three categories. The ponds have imaginatively been named A, B and C.
+
+Note the use of the `rep` and `c` functions to generate our values for the categorical predictor - these functions are very much your friend in simulating datasets!
+
+Once again, we simulate a set of predicted values using the model equation. We use the equation from above, but add our extra predictor/term.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+avg_clutch <- b0 + b1*length + model.matrix(~0+pond) %*% b2
+```
+
+Including a categorical predictor is a bit more complex. We use `model.matrix(~0+pond) %*% b2` instead of simply multiplying our variable by a constant.
+
+The `model.matrix` function produces a table of 0s and 1s - a matrix that represents the design of our experiment. Our `b2` is also technically a matrix. Then, `%*%` syntax is the operator in R for matrix multiplication, to multiply these two things together.
+
+You don't really need to understand matrix multiplication to get used to this method. We'll use this syntax a few more times in this chapter, so you'll learn to recognise and repeat the pattern - that's plenty!
+:::
+
+Finally, as before, we now sample our actual values of `clutchsize` from a normal distribution with `avg_clutch` as the mean and with a standard deviation of `sdi`.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(clutchsize, length, pond)
+```
+:::
+
+### Check the dataset
+
+Once again, we'll visualise and model these data, to check that they look as we suspected they would.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+lm_golden2 <- lm(clutchsize ~ length + pond, goldentoad)
+
+summary(lm_golden2)
+
+ggplot(goldentoad, aes(x = length, y = clutchsize, colour = pond)) +
+  geom_point()
+```
+:::
+
+Has our model recreated "reality" very well? Would we draw the right conclusions from it?
+
+Once again: explore what happens if you change different parameters in your model.
+
+## Simulating interactions
+
+Now, let's simulate an interaction effect `length:pond`.
+
+Since at least one of the variables in our interaction is a categorical predictor, requiring a vector beta coefficient and the use of the `model.matrix` syntax, the interaction will be the same.
+
+Think of it this way: our model with an interaction term will consist of three lines of best fit, each with a different intercept *and* gradient.
+
+The difference in intercepts is captured by `b2`, and then the difference in gradients is captured by `b3` that we set now: 
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+rm(list=ls())
+
+set.seed(20)
+
+n <- 60
+b0 <- 175
+b1 <- 2
+b2 <- c(0, 30, -10)
+b3 <- c(0, 0.5, -0.2)
+
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+```
+:::
+
+And then we continue exactly as we did before. We don't need to set up a new predictor, since we're just using the two we were before.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+avg_clutch <- b0 + b1*length + model.matrix(~0+pond) %*% b2 + model.matrix(~0+length:pond) %*% b3
+
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(clutchsize, length, pond)
+```
+:::
+
+### Checking the dataset
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r}
+ggplot(goldentoad, aes(x = length, y = clutchsize, colour = pond)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+
+lm_golden3 <- lm(clutchsize ~ length*pond, goldentoad)
+
+summary(lm_golden3)
+```
+:::
+
+
+### Exercise 1 - Including confounds
+
+::: {.callout-exercise}
+{{< level 1 >}}
+
+Often in research there are additional factors that vary during our experiment, which have an impact on our response variable and yet we are not actually interested in.
+
+These are often referred to as confounding variables, and one of the methods of dealing with them (if you can't control for them in your initial data collection) is to include them as covariates of no interest in your model.
+
+Modelling confounds, or covariates of no interest, is as simple as just including them as predictors and then ignoring them in your interpretation (with the caveat that if the covariate has a meaningful interaction with a predictor of interest, you will need to mention it in the interpretation after all!)
+
+This means that simulating covariates of no interest is just as easy as simulating any other predictor variable.
+:::
+
+**Add a froggy confound!**
+
+To practise what you've seen above:
+
+-   Add one or more covariates to your simulation. Start by including it as a main effect, with no interactions. You can choose whether you'd like them to be categorical or continuous - it makes no difference!
+-   Then, simulate a version of the dataset where your covariate of choice has an interaction with one of the predictors we do care about.
+-   Fit a model to this new version of the dataset. Deliberately exclude the interaction term from that model. 
+
+Note how this impairs your ability to access the true relationship between your predictors and your response.
+
+This is why it's so important to consider interactions!
+
+
+## Power analysis
+
+Thus far, we've used simulation as a way of better understanding how linear models work. This has a few useful applications in real research:
+
+-   It lets you "imagine" your data more clearly...
+-   ... which, in turn, may help you identify flaws in your experimental design
+-   You can test out your analysis pipelines (e.g., scripts) on simulated data, for debugging purposes
+
+Another, very meaningful application of data simulation is constructing your very own power analysis. The idea is that you can simulate many datasets from the same model (instead of just one, as we've been doing), fit the model to each of them, and then look across the entire set to see how it performs across the board.
+
+Let's try that.
+
+We'll use the simple linear regression example from above, to keep things as transparent as possible.
+
+We'll extract the overall F-statistic and p-value, and also the R^2^ value, just as an example. You could use this code as a template to also extract the beta coefficients, or individual p-values for multiple predictors (i.e., the output of an `anova` function).
+
+
+::: {.panel-tabset group="language"}
+## R
+```{r}
+rm(list=ls())
+
+set.seed(20)
+
+# As always, set the parameters that won't change
+n <- 60
+b0 <- 175
+b1 <- 2
+sdi <- 20
+```
+
+Now, we use a for loop to simulate 1000 datasets, and save their p-values in a list object.
+
+```{r}
+# First, we have to initialise the matrix that we plan to store our info in
+toad_sim_results <- data.frame(matrix(ncol=3,nrow=1000, dimnames=list(NULL, c("f", "p", "rsquared"))))
+
+for(i in 1:1000) {
+
+  length <- rnorm(n, 48, 3)
+  avg_clutch <- b0 + b1*length
+  clutchsize <- rnorm(n, avg_clutch, sdi)
+
+  goldentoad <- tibble(length, clutchsize)
+
+  lm_toad <- lm(clutchsize ~ length)
+  
+  f <- summary(lm_toad)$fstatistic
+  toad_sim_results$f[i] <- f[1]
+  toad_sim_results$p[i] <- pf(f[1],f[2],f[3],lower.tail=F)
+  toad_sim_results$rsquared[i] <- summary(lm_toad)$r.squared
+
+}
+```
+:::
+
+Now, we can look at the overall distribution of these different values.
+
+Let's start by looking at the test statistics.
+
+::: {.panel-tabset group="language"}
+## R
+```{r}
+plot(toad_sim_results$f)
+
+hist(toad_sim_results$f)
+```
+:::
+
+Remember: each of these F-statistics is acting as a "summary" for a single dataset, of pertinent information about those data (in this case, the signal-to-noise ratio). Since each of our samples is unique, although drawn from the same underlying distribution, we also expect them to have different F-statistics.
+
+(Reassuringly, our 1000 F-statistics seem to follow an F-distribution - this makes sense!)
+
+The interesting part for a power analysis, however, is figuring out what proportion of these F-statistics have associated p-values under our significance threshold.
+
+Let's assume that we're using a significance threshold of 0.05.
+
+::: {.panel-tabset group="language"}
+## R
+```{r}
+mean(toad_sim_results$p < 0.05, na.rm = TRUE)
+```
+:::
+
+64% of our results are significant. Specifically, 64% of our tests give significant results, in a situation where the null hypothesis is false (i.e., there is a real result). These represent our true positives.
+
+The "true positive" rate is our statistical power. With a given effect size and sample size - which we set up by choosing `n`, `sdi` and the beta coefficients - we find that this model has 64% power.
+
+We have performed an *a posteriori* power analysis.
+
+Let's compare this to a traditional power analysis, using a couple of specific datasets simulated under different seeds, but using the same parameters.
+
+::: {.panel-tabset group="language"}
+## R
+```{r}
+rm(list=ls())
+
+set.seed(21)
+
+n <- 60
+b0 <- 175
+b1 <- 2
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+avg_clutch <- b0 + b1*length
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(length, clutchsize)
+
+lm_toad <- lm(clutchsize ~ length)
+
+u <- summary(lm_toad)$f[2]
+v <- summary(lm_toad)$f[3]
+f2 <- summary(lm_toad)$r.squared/(1-summary(lm_toad)$r.squared)
+  
+pwr.f2.test(u, v, f2, sig.level=0.05)
+```
+
+```{r}
+rm(list=ls())
+
+set.seed(23)
+
+n <- 60
+b0 <- 175
+b1 <- 2
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+avg_clutch <- b0 + b1*length
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(length, clutchsize)
+
+lm_toad <- lm(clutchsize ~ length)
+
+u <- summary(lm_toad)$f[2]
+v <- summary(lm_toad)$f[3]
+f2 <- summary(lm_toad)$r.squared/(1-summary(lm_toad)$r.squared)
+  
+pwr.f2.test(u, v, f2, sig.level=0.05)
+```
+
+:::
+
+These two seeds (chosen specifically to illustrate the point) give wildly different estimates of the statistical power. This is because they also have wildly different R^2^ values in the model summaries.
+
+Given what you know, from the content in this chapter, do you trust the results from either of these single datasets more or less than you trust the results from 1000 datasets combined?
+
+### Exercise 2 - Changing power
+
+::: {.callout-exercise}
+{{< level 2 >}}
+
+Return to the for loop that we used to generate our 1000 datasets, and change some of the parameters.
+
+-   How does increasing or decreasing `n` impact power?
+-   How does changing the beta coefficients impact power?
+-   What about changing `sdi`?
+
+Look at the impact that each of these things has on the set of statistics, p-values, and R^2^ values that you get.
+
+:::
+
+### Exercise 3 - A priori power analysis
+
+::: {.callout-exercise}
+{{< level 3 >}}
+
+Perhaps the more useful application of power analysis is figuring out how big your sample size needs to be.
+
+For those who feel more comfortable with the programming, try running simulations where you vary `n` over a range, and look at the impact. (Keep all the other parameters constant, unless you're *really* looking for a challenge.)
+
+See if you can find a sensible cut-off for `n` where 80% power is achieved.
+:::
+
+
+## Summary
+
+::: {.callout-tip}
+#### Key Points
+
+-   Datasets can be simulated, by setting up the underlying distribution and sampling randomly from it
+-   You can sample from different types of distributions, with varying parameters
+-   These simulated datasets can be used for checking your experimental design, and/or testing your analysis pipeline
+-   Simulations can also be used to perform power analyses
+:::

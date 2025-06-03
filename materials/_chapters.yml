@@ -1,0 +1,15 @@
+book:
+  chapters:
+    - part: "Introducing simulation"
+      chapters:
+        - materials/01-simulation-basics.qmd
+        - materials/02-statistical-concepts.qmd
+        - materials/03-linear-models.qmd
+    # - part: "More complex datasets"
+    #   chapters:
+    #     - materials/00-noncontinuous-responses.qmd
+    #     - materials/00-more-statistical-concepts.qmd
+    # - part: "Statistics using simulation"
+    #   chapters:
+    #     - materials/00-power-analysis.qmd
+    #     - materials/00-resampling.qmd
