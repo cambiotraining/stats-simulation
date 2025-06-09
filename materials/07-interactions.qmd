@@ -1,0 +1,997 @@
+---
+title: "Simulating interactions"
+output: html_document
+---
+
+```{r}
+#| echo: false
+#| message: false
+#| results: hide
+source(file = "setup_files/setup.R")
+```
+
+```{python}
+#| echo: false
+#| message: false
+exec(open('setup_files/setup.py').read())
+import shutup;shutup.please()
+```
+
+## Libraries and functions
+
+::: {.callout-note collapse="true"}
+## Click to expand
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, load libraries}
+#| eval: false
+
+library(tidyverse)
+library(rstatix)
+
+library(performance)
+library(ggResidpanel)
+```
+
+## Python
+```{python, import libraries}
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+import pingouin as pg
+
+from patsy import dmatrix
+```
+:::
+:::
+
+In this chapter, we're going to simulate a few different possible interactions for the `goldentoad` dataset we've been building.
+
+As with main effects, categorical interactions are a little trickier than continuous ones, so we'll work our way up.
+
+## Two continuous predictors
+
+The easiest type of interaction to simulate is a two-way interaction between continuous predictors.
+
+We'll use the `length` predictor from before, and add a new continuous predictor, `temperature`.
+
+(I don't know whether temperature actually does predict clutch size in toads - remember, this is made up!)
+
+#### Set up parameters and predictors
+
+First, we set the important parameters. This includes the beta coefficients.
+
+::: {.callout-note collapse="true"}
+#### You might notice...
+
+that we've increase the sample size from previous chapters, and tweaked beta0.
+
+This is to give our model a fighting chance to recover some sensible estimates at the end, and also to keep the values of our final `clutchsize` variable within some sensible biological window.
+
+However, all of this is **optional** - the process of actually doing the simulation would work the same even with the old values!
+:::
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, twoway cont interaction parameters}
+set.seed(22)
+
+n <- 120
+b0 <- -30             # intercept
+b1 <- 0.7               # main effect of length
+b2 <- 0.5             # main effect of temperature
+
+b3 <- 0.25             # interaction of length:temperature
+
+sdi <- 12
+```
+
+## Python
+
+```{python, two way cont interaction params}
+np.random.seed(28)
+
+n = 120
+b0 = -30            # intercept
+b1 = 0.7            # main effect of length
+b2 = 0.5            # main effect of temperature
+
+b3 = 0.25           # interaction of length:temperature
+
+sdi = 12
+```
+:::
+
+Notice that the beta coefficient for the interaction is just a single constant - this is always true for an interaction between continuous predictors.
+
+Next, we generate the values for `length` and `temperature`:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, generate length variable}
+length <- rnorm(n, 48, 3)
+
+temperature <- runif(n, 10, 32)
+```
+
+## Python
+
+```{python, generate predictor length}
+length = np.random.normal(48, 3, n)
+
+temperature = np.random.uniform(10, 32, n)
+```
+:::
+
+Just for a bit of variety, we've sampled `temperature` from a uniform distribution instead of a normal one. 
+
+It won't make any difference at all to the rest of the workflow, but if you'd like, you can test both ways to see whether it has an impact on the visualisation and model at the end!
+
+#### Simulate response variable
+
+These steps should look familiar from previous chapters.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, simulate avg clutch twowaycont}
+avg_clutch <- b0 + b1*length + b2*temperature + b3*length*temperature
+
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(length, temperature, clutchsize)
+```
+
+## Python
+
+```{python, simulate avg_clutch twoway cont}
+avg_clutch = b0 + b1*length + b2*temperature + b3*length*temperature
+
+clutchsize = np.random.normal(avg_clutch, sdi, n)
+
+goldentoad = pd.DataFrame({'length': length, 'temperature': temperature, 'clutchsize': clutchsize})
+```
+:::
+
+#### Check the dataset
+
+First, let's visualise the dataset.
+
+This isn't always easy, with two continuous variables, but one way that gives us at least some idea is to assign one of our continuous predictors to the `colour` aesthetic:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, test data twoway cont}
+ggplot(goldentoad, aes(x = length, y = clutchsize, colour = temperature)) +
+  geom_point(size = 3) +
+  scale_colour_continuous(type = "viridis")
+```
+
+## Python
+
+```{python, data test two way cont}
+plt.clf()
+plt.scatter(goldentoad["length"], goldentoad["clutchsize"], c=goldentoad["temperature"],  
+    cmap="viridis", s=40)          # optional - set colourmap and point size                
+# add labels
+plt.xlabel("Length"); plt.ylabel("Clutch Size"); plt.colorbar(label="Temperature")
+plt.grid(True)
+plt.show()
+```
+:::
+
+Broadly speaking, `clutchsize` is increasing with both `length` and `temperature`, which is good - we specified positive betas for both main effects.
+
+Since we specified a positive beta for the interaction, we would expect there to be a bigger increase in `clutchsize` per unit increase in `length`, for each unit increase in `temperature`. 
+
+Visually, that *should* look like the beginnings of a "trumpet" or "megaphone" shape in the data; you're more likely to see that with a larger sample size.
+
+Next, let's fit the linear model and see if we can recover those beta coefficients:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, fit correct model twoway cont}
+lm_golden <- lm(clutchsize ~ length * temperature, data = goldentoad)
+
+summary(lm_golden)
+```
+
+## Python
+
+```{python, twoway cont fit correct model}
+model = smf.ols(formula= "clutchsize ~ length * temperature", data = goldentoad)
+
+lm_golden = model.fit()
+print(lm_golden.summary())
+```
+:::
+
+Not bad. Not brilliant, but not terrible!
+
+Out of interest, let's also fit a model that we know is incorrect - one that doesn't include the interaction effect:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, fit wrong model twoway cont}
+lm_golden <- lm(clutchsize ~ length + temperature, data = goldentoad)
+
+summary(lm_golden)
+```
+
+## Python
+
+```{python, twoway cont fit wrong model}
+model = smf.ols(formula= "clutchsize ~ length + temperature", data = goldentoad)
+
+lm_golden = model.fit()
+print(lm_golden.summary())
+```
+:::
+
+Without the interaction term, our estimates are **wildly** wrong - or least, much more wrong than they were with the interaction. 
+
+This is a really nice illustration of how important it is to check for interactions when modelling data.
+
+## One categorical & one continuous predictor
+
+The next type of interaction we'll look at is between one categorical and one continuous predictor. This is the type of interaction you'd see in a grouped linear regression.
+
+We'll use our two predictors from the previous chapters, `length` and `pond`. 
+
+#### Set up parameters and predictors
+
+Since at least one of the variables in our interaction is a categorical predictor, the beta coefficient for the interaction will need to be a vector.
+
+Think of it this way: our model with an interaction term will consist of three lines of best fit, each with a different intercept *and* gradient. The difference in intercepts is captured by `b2`, and then the difference in gradients is captured by `b3`.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, parameters for cat:cont interaction}
+rm(list=ls()) # optional clean-up
+
+set.seed(20)
+
+n <- 60
+b0 <- 175                 # intercept
+b1 <- 2                   # main effect of length
+b2 <- c(0, 30, -10)       # main effect of pond
+b3 <- c(0, 0.5, -0.2)     # interaction of length:pond
+
+sdi <- 12
+
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+```
+
+## Python
+
+```{python, optional cleanup step}
+#| eval: false
+del(length, pond, goldentoad, clutchsize, avg_clutch) # optional clean-up
+```
+
+```{python, parameters for cat:cont interaction sim}
+np.random.seed(23)
+
+n = 60
+b0 = 175                          # intercept
+b1 = 2                            # main effect of length
+b2 = np.array([0, 30, -10])       # main effect of pond
+b3 = np.array([0, 0.5, -0.2])     # interaction of length:pond
+
+sdi = 12
+
+length = np.random.normal(48, 3, n)
+pond = np.repeat(["A","B","C"], repeats = n//3)
+```
+:::
+
+Simulating the values for `length` and `pond` themselves is no different to how we did it in previous chapters.
+
+#### Simulate response variable
+
+Once again, we use our two-step procedure to simulate our response variable.
+
+Since our interaction is categorical (i.e., contains a categorical predictor), we will need to create a design matrix for it.
+
+::: {.panel-tabset group="language"}
+## R
+```{r, model.matrix for length:pond}
+model.matrix(~0+length:pond)
+```
+## Python
+```{python, dmatrix for length:pond}
+Xpond_length = dmatrix('0 + C(pond):length', data = {'pond': pond, 'length': length})
+```
+:::
+
+You'll notice that this design matrix doesn't contain 0s and 1s, like the design matrix for `pond` alone does.
+
+Instead, wherever there *would* be a 1, it has been replaced with the value of `length` for that row.
+
+This means that when we multiply our design matrix by our `b3`, the following happens:
+
+::: {.panel-tabset group="language"}
+## R
+```{r, model.matrix for length:pond by b3}
+model.matrix(~0+length:pond) %*% b3
+```
+## Python
+```{python, dmatrix for length:pond by b3}
+np.dot(Xpond_length, b3)
+```
+:::
+
+We get no adjustments made for any of the measurements from pond `A`. This is what we wanted, because this pond is our reference group. The gradient between 'clutchsize ~ length' in pond `A` is therefore kept equal to our `b2` value.
+
+We do, however, get adjustments for ponds `B` and `C`. These generate a different gradient between `clutchsize ~ length` for our two non-reference ponds.
+
+We then add this in to our model equation, like so:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, simulate interaction dataset}
+avg_clutch <- b0 + b1*length + model.matrix(~0+pond) %*% b2 + model.matrix(~0+length:pond) %*% b3
+
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(clutchsize, length, pond)
+```
+
+## Python
+
+```{python, simulate dataset with interaction}
+Xpond = dmatrix('0 + C(pond)', data = {'pond': pond})
+Xpond_length = dmatrix('0 + C(pond):length', data = {'pond': pond, 'length': length})
+
+avg_clutch = b0 + b1*length + np.dot(Xpond, b2) + np.dot(Xpond_length, b3)
+
+clutchsize = np.random.normal(avg_clutch, sdi, n)
+
+goldentoad = pd.DataFrame({'pond': pond, 'length': length, 'clutchsize': clutchsize})
+```
+:::
+
+#### Check the dataset
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, check cat:cont interaction dataset}
+ggplot(goldentoad, aes(x = length, y = clutchsize, colour = pond)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm", se = FALSE)
+
+lm_golden <- lm(clutchsize ~ length*pond, goldentoad)
+
+summary(lm_golden)
+```
+
+## Python
+
+We're going to use the `seaborn` package here, instead of just `matlibplot`, for efficiency.
+
+(If you'd prefer, however, you can just use `plotnine` and copy the R code from the other tab.)
+
+```{python, visualise cat:cont interaction}
+plt.clf()
+sns.lmplot(data=goldentoad, x="length", y="clutchsize", hue="pond", height=5, aspect=1.3,
+           scatter_kws={"s": 40}, line_kws={"linewidth": 2}, ci=None)
+plt.grid(True)
+plt.show()
+```
+
+
+```{python, check dataset with interaction}
+model = smf.ols(formula= "clutchsize ~ length * pond", data = goldentoad)
+
+lm_golden = model.fit()
+print(lm_golden.summary())
+```
+:::
+
+We can see that we get three separate lines of best fit, with different gradients and intercepts.
+
+How do these map onto our beta coefficients?
+
+-   The intercept and gradient for pond `A` are captured in `b0` and `b1`
+-   The differences between the intercept of pond `A` and the intercepts of ponds `B` and `C` are captured in `b2`
+-   The differences in gradients between pond `A` and the gradients of ponds `B` and `C` are captured in `b3`
+
+Ultimately, there are still 6 unique numbers; but, because of the format of the equation of a linear model, they're split across 4 separate beta coefficients.
+
+## Two categorical predictors
+
+Last but not least: what happens if we have an interaction between two categorical predictors?
+
+We'll use a binary predictor variable, presence of `predators` (yes/no), as our second categorical predictor alongside `pond`.
+
+#### Set up parameters and predictors
+
+By now, most of this should look familiar. We construct `predators` just like we do `pond`, by repeating the elements of a list/vector.
+
+(To keep things simple, we'll drop our continuous `length` predictor for this example.)
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, simulate cat:cat interaction}
+rm(list=ls()) # optional clean-up
+
+set.seed(20)
+
+n <- 60
+b0 <- 165
+b1 <- c(0, 30, -10)   # pond (A, B, C)
+b2 <- c(0, 20)        # presence of predator (no, yes)
+
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+
+predators <- rep(c("yes", "no"), times = n/2)
+```
+
+## Python
+
+```{python, optional cleanup step again}
+#| eval: false
+del(length, pond, goldentoad, clutchsize, avg_clutch) # optional clean-up
+```
+
+```{python, simulate a cat:cat interaction}
+np.random.seed(23)
+
+n = 60
+b0 = 165
+b1 = np.array([0, 30, -10])   # pond (A, B, C)
+b2 = np.array([0, 20])        # presence of predator (no, yes)
+
+sdi = 20
+
+length = np.random.normal(48, 3, n)
+pond = np.repeat(["A","B","C"], repeats = n//3)
+
+predators = np.tile(["yes","no"], reps = n//2)
+```
+:::
+
+You'll notice that we haven't specified `b3` yet - the next section is dedicated to this, since it gets a bit abstract.
+
+#### The interaction coefficient
+
+What on earth does our `b3` coefficient need to look like?
+
+Well, we know it needs to be a vector. Any interaction that contains at least one categorical predictor, requires a vector beta coefficient.
+
+Let's look at the design matrix for the `pond:predators` interaction to help us figure that out.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, using model.matrix for cat:cat interaction}
+#| results: hide
+model.matrix(~0 + pond:predators)
+```
+
+```{r, using model.matrix for cat:cat interaction (output)}
+#| echo: false
+head(model.matrix(~0 + pond:predators))
+```
+
+## Python
+
+```{python, using dmatrix for cat:cat interaction}
+Xpond_pred = dmatrix('0 + C(pond):C(predators)', data = {'pond': pond, 'predators': predators})
+```
+
+```{python, using dmatrix for cat:cat interaction (output)}
+#| echo: false
+np.asarray(Xpond_pred)[:5, :]
+```
+:::
+
+The matrix is 60 rows long (here we're looking at just the top few rows) and has 6 columns.
+
+Those 6 columns represent our 6 possible subgroups, telling us that our `b4` coefficient will need to be 6 elements long. Some of these elements will be 0s, but how many?
+
+**The short answer is this:**
+
+The first 4 elements will be 0s, because our `b0`, `b1` and `b2` coefficients already contain values for 4 of our subgroups. We then need two additional unique numbers for the remaining 2 subgroups.
+
+::: {.callout-tip collapse="true"}
+#### For a longer answer:
+
+Remember that when fitting the model, our software will choose a group as a reference group.
+
+In this example, `b0` is the mean of our reference group, which here is `pondA:predatorsno` (determined alphabetically).
+
+Our other beta coefficients then represent the differences between this reference group mean, and our other group means.
+
+- `b0`, the baseline mean of our reference group `pondA:predatorsno`
+- `b2`, containing two numbers; these capture the difference between the reference group and `pondB:predatorsno`/`pondC:predatorsno`
+- `b3`, containing one number; this captures the difference between the reference group and `pondA:predatorsyes`
+
+If we didn't include a `b3` at all, we would get a dataset that looks like this:
+
+```{r, only 4 numbers needed}
+#| echo: false
+set.seed(20)
+
+n <- 6000
+b0 <- 165
+#b1 <- 2               # length 
+b2 <- c(0, 30, -10)   # pond (A, B, C)
+b3 <- c(0, 20)        # presence of predator (no, yes)
+
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+
+predators <- rep(c("yes", "no"), times = n/2)
+
+avg_clutch <- b0 + model.matrix(~0+pond) %*% b2 + model.matrix(~0+predators) %*% b3
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+toads <- tibble(clutchsize, length, pond, predators)
+
+toad_means <- toads %>%
+  group_by(pond, predators) %>%
+  summarise(mean(clutchsize)) %>%
+  pull(`mean(clutchsize)`)
+
+ggplot(toads, aes(x=pond, y=clutchsize, colour=predators)) +
+  geom_boxplot(outlier.shape = NA) +
+  #stat_summary(aes(group=predators), fun = "mean", geom="point") +
+  geom_segment(x=1, xend=1, y=toad_means[1], yend=toad_means[2], linewidth=1, colour="black") +
+  geom_segment(x=2, xend=2, y=toad_means[3], yend=toad_means[4], linewidth=1, colour="black")+
+  geom_segment(x=3, xend=3, y=toad_means[5], yend=toad_means[6], linewidth=1, colour="black")
+```
+
+Here, the difference in group means between `pondA:predatorsno` and `pondA:predatorsyes` is the exact same difference as we see within ponds `B` and `C` as well. That's represented by the black lines, which are all identical in height.
+
+This means that the only information we need to recreate the 6 group means is the 4 values from our `b0`, `b1` and `b2` coefficients.
+
+If we include the interaction term, however, then that's no longer the case. Within each pond, there can be a completely unique difference between when predators were and weren't present:
+
+```{r, 6 numbers needed}
+#| echo: false
+set.seed(20)
+
+n <- 6000
+b0 <- 165
+#b1 <- 2               # length 
+b2 <- c(0, 30, -10)   # pond (A, B, C)
+b3 <- c(0, 20)        # presence of predator (no, yes)
+b4 <- c(0, 0, 0, 0, -20, 40)
+
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+
+predators <- rep(c("yes", "no"), times = n/2)
+
+avg_clutch <- b0 + model.matrix(~0+pond) %*% b2 + model.matrix(~0+predators) %*% b3 + model.matrix(~0+pond:predators) %*% b4
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+toads <- tibble(clutchsize, length, pond, predators)
+
+toad_means <- toads %>%
+  group_by(pond, predators) %>%
+  summarise(mean(clutchsize)) %>%
+  pull(`mean(clutchsize)`)
+
+ggplot(toads, aes(x=pond, y=clutchsize, colour=predators)) +
+  geom_boxplot(outlier.shape = NA) +
+  #stat_summary(aes(group=predators), fun = "mean", geom="point") +
+  geom_segment(x=1, xend=1, y=toad_means[1], yend=toad_means[2], linewidth=1, colour="black") +
+  geom_segment(x=2, xend=2, y=toad_means[3], yend=toad_means[4], linewidth=1, colour="black")+
+  geom_segment(x=3, xend=3, y=toad_means[5], yend=toad_means[6], linewidth=1, colour="black")
+```
+
+Now, we cannot use the same `b2` value (yes vs no predators) for each of our three ponds: we need unique differences.
+
+Or, to phrase it another way: each of our 5 non-reference subgroups will have a completely unique difference in means from our reference subgroup. 
+
+This means our simulation needs to provide 6 unique values across our beta coefficients. We already have the first 4, from `b0`, `b1` and `b2`, so we just need two more.
+:::
+
+This, therefore, is what our `b3` looks like:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, adding b4}
+b3 <- c(0, 0, 0, 0, -20, 40)
+```
+
+## Python
+
+```{python, b4 added}
+b3 = np.array([0, 0, 0, 0, -20, 40])
+```
+:::
+
+Since there are 6 subgroups, and the first 4 from our model design matrix are already dealt with, we only need two additional numbers. The other groups don't need to be adjusted further.
+
+#### Simulate response variable & check dataset
+
+Finally, we simulate our response variable, and then we can check how well our model does at recovering these parameters.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, catching up on the simulation}
+#| echo: false
+set.seed(20)
+
+n <- 60
+b0 <- 165
+b1 <- c(0, 30, -10)   # pond (A, B, C)
+b2 <- c(0, 20)        # presence of predator (no, yes)
+
+sdi <- 20
+
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+
+predators <- rep(c("yes", "no"), times = n/2)
+```
+
+
+```{r, finishing iteraction simulation goldentoads}
+b3 <- c(0, 0, 0, 0, -20, 40)    # interaction pond:predators
+
+avg_clutch <- b0 + model.matrix(~0+pond) %*% b1 + model.matrix(~0+predators) %*% b2 + model.matrix(~0+pond:predators) %*% b3
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+toads <- tibble(clutchsize, length, pond, predators)
+
+# fit and summarise model
+lm_toads <- lm(clutchsize ~ length + pond * predators, toads)
+summary(lm_toads)
+```
+
+## Python
+
+```{python, catch up on simulation so far}
+#| echo: false
+
+np.random.seed(23)
+
+n = 60
+b0 = 165
+b1 = np.array([0, 30, -10])   # pond (A, B, C)
+b2 = np.array([0, 20])        # presence of predator (no, yes)
+
+sdi = 20
+
+length = np.random.normal(48, 3, n)
+pond = np.repeat(["A","B","C"], repeats = n//3)
+
+predators = np.tile(["yes","no"], reps = n//2)
+```
+
+```{python, full goldentoads simulation with interactions}
+b3 = np.array([0, 0, 0, 0, -20, 40])    # interaction pond:predators
+
+# construct design matrices
+Xpond = dmatrix('0 + C(pond)', data = {'pond': pond})
+Xpred = dmatrix('0 + C(predators)', data = {'predators': predators})
+Xpond_pred = dmatrix('0 + C(pond):C(predators)', data = {'pond': pond, 'predators': predators})
+
+# simulate response variable in two steps
+avg_clutch = b0 + np.dot(Xpond, b1) + np.dot(Xpred, b2) + np.dot(Xpond_pred, b3)
+clutchsize = np.random.normal(avg_clutch, sdi, n)
+
+# collate dataset
+goldentoad = pd.DataFrame({'pond': pond, 'length': length, 'clutchsize': clutchsize})
+
+# fit and summarise model
+model = smf.ols(formula= "clutchsize ~ pond * predators", data = goldentoad)
+lm_golden = model.fit()
+print(lm_golden.summary())
+```
+:::
+
+## Three-way interactions
+
+Three-way interactions are rarer than two-way interactions, at least in practice, because they require a much bigger sample size to detect and are harder to interpret.
+
+However, they can occur, so let's (briefly) look at how you'd simulate them.
+
+#### length:temperature:pond
+
+This three-way interaction involves two continuous (`length` and `temperature`) and one categorical (`pond`) predictors.
+
+It will, by default, need a vector beta coefficient.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, threeway length:temp:pond parameters}
+set.seed(22)
+
+n <- 120
+b0 <- -30               # intercept
+b1 <- 0.7               # main effect of length
+b2 <- c(0, 30, -10)     # main effect of pond
+b3 <- 0.5               # main effect of temperature
+
+b4 <- 0.25              # interaction of length:temperature
+b5 <- c(0, 0.2, -0.1)   # interaction of length:pond
+b6 <- c(0, 0.1, -0.25)  # interaction of temperature:pond
+
+b7 <- c(0, 0.05, -0.1)  # interaction of length:temp:pond
+
+sdi <- 6
+```
+
+## Python
+
+```{python, three way parameters length:temp:pond}
+np.random.seed(28)
+
+n = 120
+b0 = -30                        # intercept
+b1 = 0.7                        # main effect of length
+b2 = np.array([0, 30, -10])     # main effect of pond
+b3 = 0.5                        # main effect of temperature
+
+b4 = 0.25                       # interaction of length:temperature
+b5 = np.array([0, 0.2, -0.1])   # interaction of length:pond
+b6 = np.array([0, 0.1, -0.25])  # interaction of temperature:pond
+
+b7 = np.array([0, 0.05, -0.1])  # interaction of length:temp:pond
+
+sdi = 6
+```
+:::
+
+There are 12 unique/non-zero values across our 8 beta coefficients.
+
+One helpful way to think about this: within each pond, we need 4 unique numbers/constants to describe the intercept, main effect of `length`, main effect of `temperature`, and two-way interaction between `length:temperature`. 
+
+Since we're allowing a three-way interaction, each of the three ponds will (or at least, can) have a completely unique set of 4 values.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, threeway length:temp:pond generate data}
+# generate predictor variables
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+temperature <- runif(n, 10, 32)
+
+# generate response variable in two steps
+avg_clutch <- b0 + b1*length + model.matrix(~0+pond) %*% b2 + b3*temperature +
+  b4*length*temperature +
+  model.matrix(~0+length:pond) %*% b5 +
+  model.matrix(~0+temperature:pond) %*% b6 +
+  model.matrix(~0+length:temperature:pond) %*% b7
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+# collate the dataset
+goldentoad <- tibble(length, pond, temperature, clutchsize)
+```
+
+## Python
+
+```{python, three way generate data length:temp:pond}
+# generate predictor variables
+length = np.random.normal(48, 3, n)
+pond = np.repeat(["A","B","C"], repeats = n//3)
+temperature = np.random.uniform(10, 32, n)
+
+# create design matrices
+Xpond = dmatrix('0 + C(pond)', data = {'pond': pond})
+Xpond_length = dmatrix('0 + C(pond):length', data = {'pond': pond, 'length': length})
+Xpond_temp = dmatrix('0 + C(pond):temp', data = {'pond': pond, 'temp': temperature})
+Xpond_temp_length = dmatrix('0 + C(pond):length:temp', data = {'pond': pond, 'length': length, 'temp': temperature})
+
+# generate response variable in two steps
+avg_clutch = (
+  b0 + b1*length + np.dot(Xpond, b2) + b3*temperature 
+  + b4*length*temperature + np.dot(Xpond_length, b5) 
+  + np.dot(Xpond_temp, b6) + np.dot(Xpond_temp_length, b7)
+  )
+clutchsize = np.random.normal(avg_clutch, sdi, n)
+
+# collate the dataset
+goldentoad = pd.DataFrame({'pond': pond, 'length': length, 'temperature': temperature, 'clutchsize': clutchsize})
+```
+:::
+
+Let's check whether these data look sensible by visualising them, and how well a linear model does at recovering the parameters:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, threeway length:temp:pond test data}
+ggplot(goldentoad, aes(x = length, colour = temperature, y = clutchsize)) +
+  facet_wrap(~ pond) +
+  geom_point()
+
+lm_golden <- lm(clutchsize ~ length * pond * temperature, data = goldentoad)
+summary(lm_golden)
+```
+
+## Python
+
+We'll use `seaborn` to create the faceted plot (though, as always, if you're used to `ggplot`/`plotnine`, you can toggle over to the R code and use that as a basis instead):
+
+```{python, three way test data length:temp:pond}
+plt.clf()
+g = sns.FacetGrid(goldentoad, col="pond", hue="temperature", height=4, aspect=1.2)
+g.map_dataframe(sns.scatterplot, x="length", y="clutchsize")
+```
+
+And let's fit and summarise the model:
+
+```{python, three way model data l:t:p}
+model = smf.ols(formula= "clutchsize ~ length * pond * temperature", data = goldentoad)
+
+lm_golden = model.fit()
+print(lm_golden.summary())
+```
+:::
+
+Try fitting a purely additive model. Better or worse?
+
+#### length:pond:predators
+
+Now, let's look at a three-way interaction that contains two categorical predictors.
+
+Within each pond, there are 4 key numbers that we need: 
+
+-   The intercept for the `predator` reference group
+-   The `length` gradient for the `predator` reference group
+-   The adjustment to the intercept for the `predator` non-reference group
+-   The adjustment the `length` gradient for the `predator` non-reference group
+
+(It can really help to draw this out on some scrap paper!)
+
+So, across our 8 beta coefficients, we're going to need 12 numbers.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, threeway length:pred:pond parameters}
+set.seed(22)
+
+n <- 120
+b0 <- -30                         # intercept
+b1 <- 0.7                         # main effect of length
+b2 <- c(0, 30, -10)               # main effect of pond (A, B, C)
+b3 <- c(0, 20)                    # main effect of predators (no, yes)
+
+b4 <- c(0, 0.2, -0.1)             # interaction of length:pond
+b5 <- c(0, 0.1)                   # interaction of length:predators
+b6 <- c(0, 0, 0, 0, 0.1, -0.25)   # interaction of pond:predators
+
+b7 <- c(0, 0, 0, 0, 0.1, -0.2)    # interaction of length:temp:pond
+
+sdi <- 6
+```
+
+## Python
+
+```{python, three way parameters length:pred:pond}
+np.random.seed(28)
+
+n = 120
+b0 = -30                                  # intercept
+b1 = 0.7                                  # main effect of length
+b2 = np.array([0, 30, -10])               # main effect of pond (A, B, C)
+b3 = np.array([0, 20])                    # main effect of predators (no, yes)
+
+b4 = np.array([0, 0.2, -0.1])             # interaction of length:pond
+b5 = np.array([0, 0.1])                   # interaction of length:predators
+b6 = np.array([0, 0, 0, 0, 0.1, -0.25])   # interaction of pond:predators
+
+b7 = np.array([0, 0, 0, 0, 0.1, -0.2])    # interaction of length:temp:pond
+
+sdi = 6
+```
+:::
+
+If you're curious how we were supposed to know to put all the leading zeroes in our `b6` and `b7` coefficients - the answer is, by looking ahead and checking the number of columns in the design matrix!
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, threeway length:pred:pond generate data}
+# generate predictor variables
+length <- rnorm(n, 48, 3)
+pond <- rep(c("A", "B", "C"), each = n/3)
+predators <- rep(c("yes", "no"), times = n/2)
+
+# generate response variable
+avg_clutch <- b0 + b1*length + model.matrix(~0+pond) %*% b2 + model.matrix(~0+predators) %*% b3 +
+  model.matrix(~0+length:pond) %*% b4 +
+  model.matrix(~0+length:predators) %*% b5 +
+  model.matrix(~0+pond:predators) %*% b6 +
+  model.matrix(~0+length:pond:predators) %*% b7
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+# collate the dataset
+goldentoad <- tibble(length, pond, predators, clutchsize)
+```
+
+## Python
+
+```{python, three way generate data length:pred:pond}
+# generate predictor variables
+length = np.random.normal(48, 3, n)
+pond = np.repeat(["A","B","C"], repeats = n//3)
+predators = np.tile(["yes","no"], reps = n//2)
+
+# create design matrices
+Xpond = dmatrix('0 + C(pond)', data = {'pond': pond})
+Xpred = dmatrix('0 + C(pred)', data = {'pred': predators})
+Xpond_length = dmatrix('0 + C(pond):length', data = {'pond': pond, 'length': length})
+Xlength_pred = dmatrix('0 + length:C(pred)', data = {'pred': predators, 'length': length})
+Xpond_pred = dmatrix('0 + C(pond):C(pred)', data = {'pond': pond, 'pred': predators})
+Xpond_length_pred = dmatrix('0 + length:C(pond):C(pred)', data = {'pond': pond, 'length': length, 'pred': predators})
+
+# generate response variable in two steps
+avg_clutch = (
+  b0 + b1*length + np.dot(Xpond, b2) + np.dot(Xpred, b3) 
+  + np.dot(Xpond_length, b4) + np.dot(Xlength_pred, b5) 
+  + np.dot(Xpond_pred, b6) + np.dot(Xpond_length_pred, b7)
+  )
+clutchsize = np.random.normal(avg_clutch, sdi, n)
+
+# collate the dataset
+goldentoad = pd.DataFrame({'pond': pond, 'length': length, 'temperature': temperature, 'clutchsize': clutchsize})
+```
+:::
+
+## Exercises
+
+### Continuing your own simulation {#sec-exr_another-dataset-again}
+
+::: {.callout-exercise}
+{{< level 3 >}}
+
+In the previous chapters, exercises (@sec-exr_another-dataset, @sec-exr_another-dataset-again) encouraged you to simulate a dataset that by now should contain at least one categorical and one continuous predictor.
+
+Continue with that simulation, by adding at least one interaction. Adapt the code from the `goldentoad` example to achieve this.
+
+To vary the difficulty of this exercise, start with a continuous:continuous interaction, then a categorical:continuous, and then continuous:continuous.
+
+(If you're super brave, try a three-way interaction!)
+
+As always, remember - biological plausibility isn't important here. No one will check this dataset.
+:::
+
+
+## Summary
+
+Once we know how to simulate main effects, the main additional challenge for simulating interactions is to think about what the beta coefficients should look like (especially when a categorical predictor is involved).
+
+Visualising the dataset repeatedly, and going back to tweak the parameters, is often necessary when trying to simulate an interaction.
+
+::: {.callout-tip}
+#### Key Points
+
+-   Interactions containing only continuous predictors, only require a single constant as their beta coefficient
+-   While any interaction term containing a categorical predictor, must also be treated as categorical when simulating
+-   It's very helpful to visualise the dataset to check your simulation is as expected
+:::

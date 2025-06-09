@@ -3,17 +3,6 @@ title: "Predictor and response variables"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-library(tidyverse)
-library(tidyverse)
-library(rstatix)
-library(performance)
-library(ggResidpanel)
-library(MASS)
-library(pwr)
-```
-
 ```{r}
 #| echo: false
 #| message: false
@@ -71,7 +60,7 @@ from patsy import dmatrix
 
 For the examples in the materials shown here, we're going to simulate a dataset about golden toads, an extinct species of amphibians. We'll simulate various predictor variables, and their relationship to the clutch size (number of eggs) produced by a given toad.
 
-![Here's what the fancy little guys looked like! [image source](https://en.wikipedia.org/wiki/Golden_toad#/media/File:Bufo_periglenes2.jpg)](images/goldentoad.png)
+![Here's what the fancy little guys looked like! [image source](https://en.wikipedia.org/wiki/Golden_toad#/media/File:Bufo_periglenes2.jpg)](images/goldentoad.png){width=50%}
 
 ### Continuous predictors
 
@@ -203,7 +192,9 @@ When we visualise `length` and `avg_clutch` together, you see they perfectly for
 
 The final step is to simulate the actual values of clutch size. 
 
-We'll use `rnorm` function again, and we put `avg_clutch` in as our mean. This is because the set of actual clutch size values should be normally distributed around our set of predictions.
+Here, we'll be drawing from a normal distribution. We put `avg_clutch` in as our mean - this is because the set of actual clutch size values should be normally distributed around our set of predictions.
+
+Or, in other words, we want the residuals/errors to be normally distributed.
 
 ::: {.panel-tabset group="language"}
 ## R

@@ -1,10 +1,18 @@
 book:
   chapters:
-    - part: "Introducing simulation"
+    - part: "Simulation basics"
       chapters:
-        - materials/01-simulation-basics.qmd
-        - materials/02-statistical-concepts.qmd
-        - materials/03-linear-models.qmd
+        - materials/01-drawing-samples.qmd
+        - materials/02-loops.qmd
+    - part: "Statistical concepts"
+      chapters:
+        - materials/03-central-limit-theorem.qmd
+        - materials/04-confidence-intervals.qmd
+    - part: "Linear models"
+      chapters:
+        - materials/05-continuous-predictors.qmd
+        - materials/06-categorical-predictors.qmd
+        - materials/07-interactions.qmd
     # - part: "More complex datasets"
     #   chapters:
     #     - materials/00-noncontinuous-responses.qmd

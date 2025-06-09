@@ -1,0 +1,295 @@
+---
+title: "Drawing samples from distributions"
+output: html_document
+---
+
+```{r, source file}
+#| echo: false
+#| message: false
+#| results: false
+source(file = "setup_files/setup.R")
+```
+
+```{python, source file2}
+#| echo: false
+#| message: false
+#| results: false
+exec(open('setup_files/setup.py').read())
+import shutup;shutup.please()
+```
+
+## Libraries and functions
+
+::: {.callout-note collapse="true"}
+## Click to expand
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, required libraries}
+#| eval: false
+
+library(tidyverse)
+```
+
+## Python
+
+```{python, import libraries}
+#| eval: false
+
+import pandas as pd
+import numpy as np
+import random
+import statistics
+import matplotlib.pyplot as plt
+from plotnine import *
+```
+:::
+:::
+
+The first thing we need to get comfortable with is random sampling, i.e., drawing a number of data points from an underlying distribution with known parameters.
+
+Parameters are features of a distribution that determine its shape. For example, the normal distribution has two parameters: mean and variance (or standard deviation).
+
+This random sampling is what we're (hopefully) doing when we collect a sample in experimental research. The underlying distribution of the response variable, i.e., the "ground truth" in the world, has some true parameters that we're hoping to estimate. We collect a random subset of individual observations that have come from that underlying distribution, and use the sample's statistics to estimate the true population parameters.
+
+## Sampling from the normal distribution
+
+::: {.panel-tabset group="language"}
+## R
+
+This is the `rnorm` function, which we'll be using a lot in this course. It takes three arguments; the first is the number of data points (`n`) that you'd like to draw. The second and third arguments are the two important parameters that describe the shape of the underlying distribution: the mean and the standard deviation.
+
+```{r, rnorm for the first time}
+rnorm(n = 100, mean = 0, sd = 1)
+```
+
+Without any further instruction, R simply prints us a list of length `n`; this list contains numbers that have been pulled randomly from a normal distribution with mean 0 and standard deviation 1. 
+
+This is a sample or dataset, drawn from an underlying population, which we can now visualise.
+
+We'll use the base R `hist` function for this for now, just to keep things simple:
+
+```{r, rnorm piped to hist}
+rnorm(100, 0, 1) %>%
+  hist()
+```
+
+## Python
+
+The typical default method in Python for sampling from a normal distribution is via `numpy.random.normal`.
+
+It takes three arguments: `loc` (mean), `scale` (standard deviation) and `size` (sample size):
+
+```{python, np.random.normal first time}
+norm_data = np.random.normal(loc = 0, scale = 1, size = 100)
+print(norm_data)
+```
+
+The output is an array of numbers, of length `size`.
+
+This is a sample or dataset, drawn from an underlying population, which we can now visualise.
+
+For this first example, we'll show how to use both `matplotlib` and `plotnine` to create histograms. We'll use the `matplotlib` version for speed as we go through the course, but if you're transitioning over from R (or `ggplot`), you might find `plotnine` friendlier.
+
+```{python, plot hist matplot}
+plt.hist(norm_data)
+plt.show()
+```
+
+If plotting multiple histograms, you can use `plt.clf()` to clear the figure, or `plt.close()` to close the plotting window entirely.
+
+If using `plotnine`, you have to convert the array to a data frame before you can visualise it:
+
+```{python, plot hist plotnine}
+norm_df = pd.DataFrame({"values":norm_data})
+
+norm_df_hist = (
+  ggplot(norm_df, aes(x = "values")) +
+  geom_histogram()
+)
+
+print(norm_df_hist)
+```
+:::
+
+## Sampling from other distributions
+
+The normal/Gaussian distribution might be the most famous of the distributions, but it is not the only one that exists - nor the only one that we'll care about on this course.
+
+For example, we'll also be sampling quite regularly from the uniform distribution.
+
+The uniform distribution is flat: inside the range of possible values, all values are equally likely, and outside that range, the probability density drops to zero. This means the only parameters we need to set are the minimum and maximum of that range of possible values, like so:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, runif piped to hist}
+runif(n = 100, min = 0, max = 1) %>%
+  hist(xlim = c(-0.5, 1.5))
+```
+
+## Python
+
+```{python, uniform dist histogram}
+unif_data = np.random.uniform(low = 0, high = 1, size = 100)
+
+plt.clf() # clear existing plot, if applicable
+plt.hist(unif_data)
+plt.show()
+```
+:::
+
+The underlying shape of the distribution that we just sampled from looks like this - square and boxy. The probability density is zero outside of the 0-1 range, and flat inside it:
+
+```{r, visualise unif dist}
+#| echo: false
+x <- seq(-0.5, 1.5, length=2000)
+y <- dunif(x, min = 0, max = 1)
+plot(x, y, type = 'l', col='#0072CF', lwd = 3,
+     xlab='x', ylab='Probability density', main='The uniform distribution')
+```
+
+Later in this course, we will sample from the binomial, negative binomial and Poisson distributions as well.
+
+## Setting a seed
+
+What happens if you run this block of code over and over again?
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, rnorm piped to hist again}
+rnorm(100, 0, 1) %>%
+  hist()
+```
+
+## Python
+```{python, hist of multiple norm}
+plt.clf()
+plt.hist(np.random.normal(0, 1, 100))
+plt.show()
+```
+:::
+
+Each time you run the code, you are sampling a unique random subset of data points.
+
+It's very helpful that we can do that - later on in this course, we'll exploit this to sample many different datasets from the same underlying population.
+
+However, sometimes it's useful for us to be able to sample the *exact* set of data points more than once.
+
+::: {.panel-tabset group="language"}
+## R
+
+To achieve this, we can use the `set.seed` function.
+
+Run the following code several times in a row, and you'll see the difference:
+
+```{r, rnorm with seed}
+set.seed(20)
+
+rnorm(100, 0, 1) %>%
+  hist()
+```
+
+## Python
+
+To achieve this, we can use the `np.random.seed` function.
+
+Run the following code several times in a row, and you'll see the difference:
+
+```{python, np.norm with np.seed}
+np.random.seed(20)
+
+plt.clf()
+plt.hist(np.random.normal(0, 1, 100))
+plt.show()
+```
+
+:::
+
+Notice how each time, the exact same dataset and histogram are produced?
+
+You can choose any number you like for the seed. All that matters is that you return to that same seed number, if you want to recreate that dataset.
+
+## Exercises
+
+### Revisiting Shapiro-Wilk {#sec-exr_shapiro}
+
+Now that you know how to perform random sampling, let's link it back to a specific statistical test, the Shapiro-Wilk test.
+
+As a reminder: the Shapiro-Wilk test is used to help us decide whether a sample has been drawn from a normal distribution or not. It's one of the methods we have for checking the normality assumption.
+
+However, it is also itself a null hypothesis test. The null hypothesis is that the underlying distribution is normal, so a significant p-value is usually interpreted as evidence that the normality assumption is violated.
+
+::: {.callout-exercise}
+
+{{< level 1 >}}
+
+In this exercise, using the template code provided as a starting point:
+
+1. Try a variety of different seeds (hint: `20` might be interesting...)
+2. Sample from a uniform distribution instead
+3. While sampling from both normal and uniform distributions, try a variety of sample sizes (including `n < 10`)
+4. Create normal QQ plots, to compare them to the Shapiro-Wilk results (use the `qqnorm` function)
+
+Try to create:
+
+- A false positive error
+- A false negative error
+
+What does this teach you about the nature of the Shapiro-Wilk test, and null hypothesis significance tests in general?
+
+::: {.panel-tabset group="language"}
+## R
+
+Template code:
+
+```{r, template for SW exercise}
+set.seed(200)
+n <- 100
+Mean <- 0
+SD <- 1
+
+data <- rnorm(n, Mean, SD) 
+
+data %>% hist()
+
+data %>% shapiro.test()
+```
+
+## Python
+
+Template code:
+
+```{python, template for S-W exercise}
+import pingouin as pg # needed for the pg.normality function
+
+np.random.seed(200)
+n = 100
+mean = 0
+sd = 1
+
+data = np.random.normal(mean, sd, n)
+
+plt.clf()
+plt.hist(data)
+plt.show()
+
+pg.normality(data)
+```
+:::
+:::
+
+## Summary
+
+This chapter introduced a key simulation concept: sampling from distributions with known parameters. This is central to all of the simulating we will do in the remaining chapters.
+
+::: {.callout-tip}
+#### Key Points
+
+-   There are a suite of functions for sampling data points from distributions with known parameters
+-   Each distribution has its own function, with different parameters that we need to specify
+-   You can set a seed to make sure you sample the exact same set of values each time
+:::
+

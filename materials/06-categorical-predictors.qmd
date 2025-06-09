@@ -1,0 +1,429 @@
+---
+title: "Simulating continuous predictors"
+output: html_document
+---
+
+```{r}
+#| echo: false
+#| message: false
+#| results: hide
+source(file = "setup_files/setup.R")
+```
+
+```{python}
+#| echo: false
+#| message: false
+exec(open('setup_files/setup.py').read())
+import shutup;shutup.please()
+```
+
+This chapter follows on closely from the previous chapter on continuous predictors.
+
+## Libraries and functions
+
+::: {.callout-note collapse="true"}
+## Click to expand
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, load libraries}
+#| eval: false
+
+library(tidyverse)
+library(rstatix)
+
+# These packages will be used for evaluating the models we fit to our simulated data
+library(performance)
+library(ggResidpanel)
+
+# This package is optional/will only be used for later sections in this chapter
+library(MASS)
+```
+
+## Python
+```{python, import libraries}
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+from patsy import dmatrix
+```
+
+:::
+:::
+
+
+
+## The pond variable
+
+We're going to stick with our golden toads, and keep the continuous `length` predictor variable from the previous chapter, so that we can build up the complexity of our dataset gradually between chapters.
+
+To add that complexity, we're going to imagine that golden toads living in different ponds produce slightly different clutch sizes, and simulate some sensible data on that basis.
+
+#### Clear previous simulation
+
+You might find it helpful to delete variables/clear the global environment, so that nothing from your previous simulation has an unexpected impact on your new one:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, clear global environment}
+#| eval: false
+rm(list=ls())
+```
+
+## Python
+
+```{python, delete variables}
+#| eval: false
+del(avg_clutch, clutchsize, goldentoad, length, lm_golden, model, tempdata)
+```
+:::
+
+(This step is optional!)
+
+#### Simulating categorical predictors
+
+Categorical predictors are a tiny bit more complex to simulate, as the beta coefficients switch from being constants (gradients) to vectors (representing multiple means).
+
+However, we're still going to follow the same workflow that we used with continuous predictors in the previous chapter:
+
+-  Set parameters (seed, sample size, beta coefficients and standard deviation)
+-  Generate the values of our predictor variable
+-  Simulate average values of response variable
+-  Simulate actual values of response variable
+-  Check the dataset
+
+## Set parameters
+
+Exactly as we did before, we start by setting key parameters including:
+
+-   Seed, for reproducibility
+-   Sample size `n`
+-   Individual standard deviation `sdi`
+-   Beta coefficients
+
+We need three betas now, since we're adding a second predictor.
+
+To generate the beta for `pond`, we need to specify a vector, instead of a single constant. Let's keep things relatively simple and stick to just three ponds, which we'll imaginatively call `A`, `B` and `C`.
+
+Since pond `A` will be our reference group, our beta does not need to contain any adjustment for that pond, hence the vector starts with a 0. The other two numbers then represent the difference in means between pond `A` and ponds `B` and `C` respectively.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, set parameters for categorical simulation}
+set.seed(20)
+
+n <- 60
+b0 <- 175             # intercept
+b1 <- 2               # main effect of length
+b2 <- c(0, 30, -10)   # main effect of pond
+
+sdi <- 20
+```
+
+## Python
+
+```{python, set params for cat simulation}
+np.random.seed(20)
+
+n = 60
+b0 = 175                        # intercept
+b1 = 2                          # main effect of length
+b2 = np.array([0, 30, -10])     # main effect of pond
+
+sdi = 20
+```
+:::
+
+This means that, in the reality we are creating here, the true mean clutch size for each of our three ponds is 175, 205 (175+30) and 165 (175-10).
+
+## Generate values for predictor variable(s)
+
+Next, we need values for our `length` and `pond` predictors.
+
+We already know how to generate `length` from the previous chapter.
+
+For `pond`, we're not going to sample from a distribution, because we need category names instead of numeric values. So, we'll specify our category names and repeat them as appropriate:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, generate predictors for categorical simulation}
+length <- rnorm(n, 48, 3)
+
+pond <- rep(c("A", "B", "C"), each = n/3)
+```
+
+::: {.callout-tip collapse="true"}
+#### rep and c functions
+
+The `rep` and `c` functions in R (`c` short for `concatenate`) will come up quite a lot when generating predictor variables.
+
+The `rep` function takes two arguments each time: 
+
+- First, an argument containing the thing that you want repeated (which can either be a single item, or a list/vector)
+- Second, an argument containing information about how many times to repeat the first argument (there are actually multiple options for how to phrase this second argument)
+
+The `c` function is a little simpler: it combines, i.e., concatenates, all of the arguments you put into it into a single vector/list item.
+
+You can then combine these two functions together in various ways to achieve what you want.
+
+For example, these two lines of code both produce the same output:
+
+```{r, showcasing rep and c}
+c(rep("A", times = 3), rep("B", times = 3))
+rep(c("A", "B"), each = 3)
+```
+The first version asks for `"A"` to be repeated 3 times, `"B"` to be repeated 3 times, and then these two triplets to be concatenated together into one list.
+
+The second version asks us to take a list of two items, `"A", "B"`, and repeat each element 3 times each.
+
+Meanwhile, the code below will do something very different:
+
+```{r, showcasing rep and c (2)}
+rep(c("A", "B"), times = 3)
+```
+
+This line of code asks us to take the list `"A", "B"` and repeat it, as-is, 3 times. So we get a final result that alternates.
+
+This shows that choosing carefully between `times` or `each` as your second argument for the `rep` function can be absolutely key to getting the right output!
+
+Don't forget you can use `?rep` or `?c` to get more detailed information about how these functions work, if you would like it.
+:::
+
+## Python
+
+```{python, generate predictors for cat simulation}
+length = np.random.normal(48, 3, n)
+
+pond = np.repeat(["A", "B", "C"], repeats = n//3)
+```
+
+::: {.callout-tip collapse="true"}
+#### np.repeat and np.tile functions
+
+When generating categorical variables, you are essentially repeating the category names multiple times.
+
+Note the difference between these two outputs, produced using two different `numpy` functions:
+
+```{python, np.rep demo}
+np.repeat(["A", "B", "C"], repeats = n//3)
+```
+
+```{python, np.tile demo}
+np.tile(["A", "B", "C"], reps = n//3)
+```
+
+In both functions, the first argument is an list of category names, with no duplication. Then, you specify the number of repeats with either `repeats` or `reps` (for `np.repeats` vs `np.tile` respectively).
+
+However, the two functions do slightly different things:
+
+- `np.repeats` takes each element of the list and repeats it a specified number of times, before moving on to the next element
+- `np.tile` takes the entire list as-is, and repeats it as a chunk for a desired number of times
+
+In both cases we end up with an array of the same length, but the order of the category names within that list is very different.
+:::
+:::
+
+## Simulate average values of response
+
+Now, exactly as we did with the continuous predictor, we're going to construct a linear model equation to calculate the average values of our response.
+
+However, including a categorical predictor in our model equation is a bit more complex. 
+
+We can no longer simply multiply our beta coefficient by our predictor, because our beta coefficient is a vector rather than a constant.
+
+Instead, we need to make use of something called a design matrix, and matrix multiplication, like so:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, using model.matrix}
+model.matrix(~0 + pond)
+```
+
+The `model.matrix` function produces a table of 0s and 1s, which is a matrix representing the design of our experiment. In this case, that's three columns, one for each pond.
+
+The number of columns in our model matrix matches the number of categories and the length of our `b2` coefficient. Our `b2` is also technically a matrix, just with one row. 
+
+This means we can use the `%*%` operator for matrix multiplication, to multiply these two things together:
+
+```{r, using model.matrix multiplication}
+model.matrix(~0+pond) %*% b2
+```
+
+This gives us the adjustments we need to make, row by row, for our categorical predictor. For pond `A` we don't need to make any, since that was the reference group.
+
+
+
+```{r, average clutch cat predictor}
+avg_clutch <- b0 + b1*length + model.matrix(~0+pond) %*% b2
+```
+
+## Python
+
+```{python, dmatrix to produce model matrix}
+Xpond = dmatrix('0 + C(pond)', data = {'pond': pond})
+```
+
+The `dmatrix` function from `patsy` produces a table of 0s and 1s, which is a matrix representing the design of our experiment. In this case, it has three columns, which matches the number of categories and the length of our `b2` coefficient. 
+
+Our `b2` is also technically a matrix, just with one row. We use `np.dot` to multiply these matrices together:
+
+```{python, dmatrix multiplied by beta}
+np.dot(Xpond, b2)
+```
+
+This gives us the adjustments we need to make, row by row, for our categorical predictor. For pond `A` we don't need to make any, since that was the reference group.
+
+We can then add all these adjustments to the rest of our model from the previous chapter, to produce our expected values:
+
+```{python, avgclutch with cat predictor}
+avg_clutch = b0 + b1*length + np.dot(Xpond, b2)
+```
+:::
+
+Don't worry - you don't really need to understand matrix multiplication to get used to this method. If that explanation was enough for you, you'll be just fine from here.
+
+We'll use this syntax a few more times in this chapter, so you'll learn to recognise and repeat the syntax!
+
+## Simulate actual values of response
+
+The last step is identical to the previous chapter.
+
+We sample our actual values of `clutchsize` from a normal distribution with `avg_clutch` as the mean and with a standard deviation of `sdi`:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, final dataset cat predictor}
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(clutchsize, length, pond)
+```
+
+## Python
+
+```{python, final data cat+cont preds}
+clutchsize = np.random.normal(avg_clutch, sdi, n)
+
+goldentoad = pd.DataFrame({'length': length, 'pond': pond, 'clutchsize': clutchsize})
+```
+:::
+
+## Checking the dataset
+
+Once again, we'll visualise and model these data, to check that they look as we suspected they would.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, testing cat predictor dataset}
+lm_golden <- lm(clutchsize ~ length + pond, goldentoad)
+
+summary(lm_golden)
+
+ggplot(goldentoad, aes(x = length, y = clutchsize, colour = pond)) +
+  geom_point()
+```
+
+## Python
+
+```{python, testing cat+cont preds data}
+model = smf.ols(formula= "clutchsize ~ length + pond", data = goldentoad)
+
+lm_golden = model.fit()
+print(lm_golden.summary())
+```
+:::
+
+Has our model recreated "reality" very well? Would we draw the right conclusions from it?
+
+## Exercises
+
+### A second categorical predictor {#sex-exr_second-cont-pred}
+
+::: {.callout-exercise}
+{{< level 1 >}}
+
+Create at least one additional categorical predictor for this dataset (perhaps `vegetation cover` or presence of `predators` at the time the toad was laying her eggs).
+
+Remember that you don't need to have values that are totally biologically plausible - this is just about simulation practice.
+:::
+
+
+### Continuing your own simulation {#sec-exr_another-dataset-continued}
+
+::: {.callout-exercise}
+{{< level 2 >}}
+
+Last chapter, the second exercise (@sec-exr_another-dataset) encouraged you to simulate a brand new dataset of your own, for practice.
+
+Continue with that simulation, this time adding a categorical predictor or two.
+
+You'll need to:
+
+-   Set the seed and sample size
+-   Set sensible beta coefficients (remember how reference groups work)
+-   Construct the predictor variable (repeating instances of your group/category names)
+-   Simulate the average and then actual values of the response
+-   Visualise and model the data, to check your simulation ran as expected
+
+Adapt the code from the `goldentoad` example to achieve this.
+
+If you used one of the inspiration examples last chapter, here's some ideas of possible categorical predictors you could add:
+
+::: {.callout-tip collapse="true"}
+#### Invasive plants
+
+Continuous response variable: **Area invaded per year** (m^2^/year)
+
+The typical range will be between ~ 10-1000 m^2^/year.
+
+Categorical predictor: **Region** (coastal, inland, mountains)
+
+On average, the rate of invasion is probably faster in coastal regions, and slower in mountainous ones.
+
+Categorical predictor: **Species** (kudzu, knotweed, starthistle)
+
+Kudzu spreads particularly fast!
+:::
+
+::: {.callout-tip collapse="true"}
+#### Gut microbiome & blood glucose
+
+Continuous response variable: **Blood glucose level** (mg/dL)
+
+Somewhere in the range 70-120 mg/dL would be typical (the upper end would be considered pre-diabetic).
+
+Possible categorical predictors: **Diet type** (vegetarian, vegan, omnivore)
+
+Compared to "normal" omnivores, vegetarians/vegans will probably have lower blood glucose levels.
+
+Categorical predictor: **Antibiotic use** in the last 6 months (yes/no)
+
+Recent antibiotic use will probably disrupt the microbiome, and lead to poorer glucose metabolism/higher blood glucose levels.
+:::
+
+:::
+
+## Summary
+
+Whether our predictor is categorical or continuous, we still need to follow the same workflow to simulate the dataset.
+
+However, categorical predictors are a touch more complicated to simulate - we need a couple of extra functions, and it's conceptually a little harder to get used to.
+
+::: {.callout-tip}
+#### Key Points
+
+-   Categorical predictors require vectors for their beta coefficients, unlike continuous predictors that just have constants
+-   This means we need to use a design matrix to multiply our vector beta coefficient by our categorical variable
+-   Otherwise, the procedure is identical to simulating with a continuous predictor
+-   You can include any number of continuous and categorical predictors in the same simulation
+:::

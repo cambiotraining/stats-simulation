@@ -1,5 +1,5 @@
 ---
-title: "Statistical simulation"
+title: "Statistical simulations"
 author: "Vicki Hodgson"
 date: today
 number-sections: false

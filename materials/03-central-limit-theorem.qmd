@@ -1,0 +1,819 @@
+---
+title: "The central limit theorem"
+output: html_document
+---
+
+```{r, source file}
+#| echo: false
+#| message: false
+#| results: hide
+source(file = "setup_files/setup.R")
+```
+
+```{python, set up}
+#| echo: false
+#| message: false
+exec(open('setup_files/setup.py').read())
+import shutup;shutup.please()
+```
+
+Now that you have the programming basics, we're going to use them to make sense of a famous statistical concept: the central limit theorem.
+
+## Libraries and functions
+
+::: {.callout-note collapse="true"}
+## Click to expand
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, required libraries}
+#| eval: false
+library(tidyverse)
+library(rstatix)
+```
+
+## Python
+
+```{python, import libraries}
+#| eval: false
+import pandas as pd
+import numpy as np
+import random
+import statistics
+import matplotlib.pyplot as plt
+import statsmodels.stats.api as sms
+from scipy.stats import t
+```
+
+:::
+:::
+
+## Estimating parameters from datasets
+
+There are two main forms of statistical inference, from dataset to population.
+
+1. Estimating parameters
+2. Testing hypotheses
+
+We'll get onto the second form later on, but for this section, we're going to focus on estimating parameters. 
+
+In other words - can we do a good job of recreating the distribution of the underlying population, just from the sample we've taken from that population?
+
+Our ability to do this well often hinges on the quality of our sample. This includes both the **size** of the sample, and whether it is **biased** in any way.
+
+If our sample is biased, there's not much we can do about it apart from a) scrapping it and starting again, or b) acknowledging the uncertainty/narrowed focus of our conclusions.
+
+We do, however, often have some control over the sample size. Let's look at how sample size affects our parameter estimates.
+
+### Mean
+
+When simulating data, we have an unusual level of knowledge and power (in the normal sense of the word, not the statistical one!): 
+
+We know exactly what the true population parameters are, because we specified them.
+
+In the code below, we know that the actual true population mean is 4, with no uncertainty. We have set this to be the "ground truth".
+
+This code is similar to the for loop introduced in @sec-exm_mean-for-loop, but we've increased the sample size.
+
+Notice how this:
+
+-   Decreases variance (our histograms are "squished" inward - pay attention to the x axis scale)
+-   Increases the consistency of our mean estimates (they are more similar to one another)
+-   Increases the accuracy of our mean estimates (they are, overall, closer to the true value of 4)
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, less simple for loop, more iterations}
+for (i in 1:3) {
+  
+  n <- 200
+  mean_n <- 4
+  sd_n <- 0.5
+  
+  data <- rnorm(n, mean_n, sd_n) 
+  
+  hist(data, xlim = c(1, 7)); abline(v = mean(data), col = "red", lwd = 3)
+
+  }
+```
+
+## Python
+
+```{python, for loop means bigger sample size}
+for i in range(1, 4):
+  n = 200
+  mean = 4
+  sd = 0.5
+  data = np.random.normal(mean, sd, n)
+  plt.figure()
+  plt.hist(data)
+  plt.axvline(x = statistics.mean(data), color = 'r')
+  plt.show()
+```
+:::
+
+In a larger sample size, we are able to do a better job of "recovering" or recreating the original parameter we specified.
+
+
+::: {.callout-tip}
+#### The average of averages
+
+When we take multiple samples and average across them, we do an *even better* job of recovering the true population mean. 
+
+In other words, if we sampled a bunch of datasets, and then took the average of all of their respective means, we'd probably get pretty close to 4.
+
+The section later on in this chapter, on the central limit theorem, pushes this idea a little further.
+:::
+
+### Variance
+
+In the code above, we also know what the true population variance is, because we set it (by setting standard deviation, the square root of variance).
+
+::: {.callout-tip}
+#### What do we mean by "variance"?
+
+Variance is calculated by measuring the difference from each data point and the mean, squaring them, adding those squares up, and then dividing by the number of data points. The mathematical formula looks like this:
+
+$$
+\text{Var}(X) = \frac{ \sum_{i=1}^{n} (x_i - \bar{x})^2 } {n}
+$$
+
+However, when we estimate population variance from a sample, we actually tweak this formula a bit. We divide instead by $n - 1$:
+
+$$
+\text{Var}(X) = \frac{ \sum_{i=1}^{n} (x_i - \bar{x})^2 } {n - 1}
+$$
+
+**Why?**
+
+Well, I could give you a theoretical explanation. Or, we can use the power of simulation, and see for ourselves more intuitively.
+
+For the next section, the word variance will crop up in different forms:
+
+-   Estimated sample variance, calculated by dividing by $n - 1$, from a dataset
+-   Estimated variance, calculated by dividing by $n$, from a dataset
+-   The true population variance, which isn't calculated; it's known/specified by us
+
+:::
+
+In the for loop below, we are using the same simulation parameters as above, and calculating (manually) two types of variance. 
+
+We'll set the mean to 4 and the variance to 1:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, seed for variance loop}
+#| echo: false
+set.seed(25)
+```
+
+```{r, for loop for showing variance create results}
+results <- data.frame(var=numeric(),
+                      sample_var=numeric())
+
+for (i in 1:30) {
+  
+  n <- 10
+  mean_n <- 4
+  sd_n <- 1
+  
+  data <- rnorm(n, mean_n, sd_n) 
+  
+  v <- sum((data - mean(data))^2)/n
+  samplev <- sum((data - mean(data))^2)/(n-1)
+
+  results <- rbind(results, data.frame(var = v, sample_var = samplev))
+  
+}
+```
+
+To break down this code further:
+
+We've initialised a `results` table with our desired columns first. On each iteration of the loop (30 total), we sample a dataset, calculate the estimated variance `estv` and sample variance `samplev` using slightly different formulae, and then add them to our `results` table.
+
+## Python
+
+```{python, np.seed for variance loop}
+#| echo: false
+np.random.seed(21)
+```
+
+```{python, create set of results for visualising variance}
+rows = []
+
+for i in range(30):
+    n = 10
+    mean = 4
+    sd = 1
+
+    data = np.random.normal(mean, sd, n)
+
+    v = np.sum((data - np.mean(data))**2) / n
+    samplev = np.sum((data - np.mean(data))**2) / (n - 1)
+    
+    rows.append({'var': v, 'sample_var': samplev})
+
+results = pd.DataFrame(rows)
+```
+
+To break down this code further:
+
+On each iteration of the loop (30 total), we sample a dataset, calculate the estimated variance `estv` and sample variance `samplev` using slightly different formulae. These values are collated by our `rows` object, which we finally convert to a pandas dataframe (a `results` table).
+:::
+
+Now, let's look at those results and what they show us.
+
+First, we'll create a new column in our `results` object that contains the difference between our estimates in each case.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, add var differences}
+results <- results %>%
+  mutate(diff_var = sample_var - var)
+```
+
+## Python
+
+```{python, pandas add var diffs}
+results['diff_var'] = results['sample_var'] - results['var']
+```
+:::
+
+When we look at the final results file, we see that the estimated sample variance is, on average, a bit bigger than the estimated variance. This makes sense, because we're dividing by a smaller number when we calculate the sample variance (in other words, $n - 1 < n$).
+
+Now, let's look at the average variance and sample variance, and see which of them is doing the best job of recreating our true population variance (which we know is 1, because we built the simulation that way).
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, add means of vars}
+results %>%
+  summarise(mean(var), mean(sample_var), mean(diff_var))
+```
+
+## Python
+
+```{python, calculate means of vars from results table}
+summary = results[['var', 'sample_var', 'diff_var']].mean()
+print(summary)
+```
+:::
+
+Here, we've taken the mean of each column. This means we're looking at the average estimated variance and the average estimated sample variance, across all 10 of our random datasets.
+
+::: {.callout-tip}
+#### Remember, each of these numbers is an average
+
+Yes, now we're taking the mean of the variance. Yes, we could also measure the variance of the variance if we wanted. Yes, this does start to get confusing the more you think about it. 
+
+More on this in the central limit theorem section!
+:::
+
+As we can see from these results, when the sample size is small, our estimated variance (on average) *underestimates* the true value.
+
+This is because, the smaller the sample, the less likely it is to contain values from the edges or tails of the normal distribution, so we don't get a good picture of the true spread.
+
+The sample variance accounts for this by dividing by `n - 1` instead, so the estimate is larger and less of an underestimate. 
+
+To get an intuition for this, let's repeat all the code above, but with a larger sample size:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, seed for variance loop2}
+#| echo: false
+set.seed(25)
+```
+
+```{r, var loop with bigger n}
+results <- data.frame(var=numeric(),
+                      sample_var=numeric())
+
+for (i in 1:30) {
+  
+  n <- 20
+  mean_n <- 4
+  sd_n <- 1
+  
+  data <- rnorm(n, mean_n, sd_n) 
+  
+  v <- sum((data - mean(data))^2)/n
+  sample <- sum((data - mean(data))^2)/(n-1)
+
+  results <- rbind(results, data.frame(var = v, sample_var = sample))
+  
+}
+
+results <- results %>%
+  mutate(diff_var = sample_var - var)
+
+results %>%
+  summarise(mean(var), mean(sample_var), mean(diff_var))
+```
+
+## Python
+
+```{python, np.seed for variance loop2}
+#| echo: false
+np.random.seed(29)
+```
+
+```{python, types of var with larger n}
+rows = []
+
+for i in range(30):
+    n = 20
+    mean = 4
+    sd = 1
+
+    data = np.random.normal(mean, sd, n)
+
+    v = np.sum((data - np.mean(data))**2) / n
+    samplev = np.sum((data - np.mean(data))**2) / (n - 1)
+    
+    rows.append({'var': v, 'sample_var': samplev})
+
+results = pd.DataFrame(rows)
+
+results['diff_var'] = results['sample_var'] - results['var']
+
+summary = results[['var', 'sample_var', 'diff_var']].mean()
+print(summary)
+```
+:::
+
+When `n` is larger, notice how the estimated variance is now closer to the true population variance, on average?
+
+With a larger sample size, we are more likely to sample the full "spread" of the distribution.
+
+The estimated sample variance, however, is about as close to the true population variance as it was before, and so the difference between the estimated variance and estimated sample variance has shrunk.
+
+::: {.callout-tip collapse="true"}
+#### Why sample variance is even cleverer than you might think
+
+Dividing by `n - 1` has a bigger impact when the sample is small, where `1` will be a relatively larger fraction of `n`.
+
+This is great, because these smaller samples are also the place where we need this adjustment most: they're less likely to contain values from the tails of the distribution, and therefore will underestimate the true population variance more.
+
+In contrast, when our sample is much bigger, it's going to be more representative/less noisy, and we see much less of an underestimation and will need less adjustment. Happily, we will automatically get less of an adjustment anyway, since the `1` is now a smaller fraction of `n`. 
+
+In other words: the impact of dividing by `n - 1` scales naturally with both the size of `n`, and with the amount of underestimation we need to account for.
+
+In fact, when the sample is infinitely large, we should see no difference between the estimated sample variance and the estimated variance at all, because `n-1 = n` at infinity.
+
+You can **test this intuition** (except for the infinity part, you kinda just have to trust me on that) by continuing to mess around with the value of `n` in the code above.
+:::
+
+Since sample variance is the most effective way to estimate the true population variance, functions in R and Python will default to this.
+
+::: {.panel-tabset group="language"}
+## R
+
+The `var` function in R specifically calculates the sample variance. We can see that we get identical results using the function or doing it manually, by adapting the loop above:
+
+```{r, seed for variance loop3}
+#| echo: false
+set.seed(25)
+```
+
+```{r, show var function}
+results <- data.frame(var=numeric(),
+                      sample_var=numeric(),
+                      r_var=numeric())
+
+for (i in 1:30) {
+  
+  n <- 20
+  mean_n <- 4
+  sd_n <- 1
+  
+  data <- rnorm(n, mean_n, sd_n) 
+  
+  v <- sum((data - mean(data))^2)/n
+  sample <- sum((data - mean(data))^2)/(n-1)
+  
+  # Add an extra column containing the results of var(data)
+  results <- rbind(results, data.frame(var = v, sample_var = sample, r_var = var(data)))
+  
+}
+
+results %>%
+  summarise(mean(var), mean(sample_var), mean(r_var))
+```
+
+Notice how `mean(sample_var)` and `mean(r_var)` are identical?
+
+## Python
+
+The `numpy.var` function specifically calculates sample variance. We can see that we get identical results using the function or doing it manually, by adapting the loop above:
+
+```{python, np.seed for variance loop3}
+#| echo: false
+np.random.seed(29)
+```
+
+```{python, show np.var function}
+rows = []
+
+for i in range(30):
+    n = 20
+    mean = 4
+    sd = 1
+
+    data = np.random.normal(mean, sd, n)
+
+    # Estimated variance
+    v = np.sum((data - np.mean(data))**2) / n
+    # Sample variance
+    sample = np.sum((data - np.mean(data))**2) / (n - 1)
+    # numpy sample variance
+    np_var = np.var(data, ddof=1)
+
+    rows.append({'var': v, 'sample_var': sample, 'np_var': np_var})
+
+results = pd.DataFrame(rows)
+
+summary = results[['var', 'sample_var', 'np_var']].mean()
+print(summary)
+```
+Notice how `sample_var` and `np_var` are identical?
+:::
+
+## Central limit theorem
+
+In the section above, we used for loops to simulate multiple datasets, measure certain statistics from them, and then averaged those statistics across the datasets.
+
+So, in some cases, we were looking at the mean of the means, or the mean of the variances. We're going to unpack that a bit further now.
+
+Specifically, we're going to talk about the central limit theorem: the idea that, across multiple samples taken from the same distribution, the estimates/statistics we calculate from them will themselves follow a normal distribution.
+
+### An example: the mean {#sec-exm_mean-CLT}
+
+You will recognise all the code below from previous sections, but here we're using it to show us a slightly different distribution.
+
+Instead of producing separate histograms for each of the datasets (i.e., one per loop), we are instead simply collecting the mean value from each of our datasets.
+
+Then, we will treat the set of means as a sample in itself, and visualise its distribution.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, central limit means demo}
+#| lst-label: lst-central-limit-template-code-r
+
+means <- c()
+
+for (i in 1:40) {
+  
+  n <- 200
+  mean_n <- 4
+  sd_n <- 1
+  
+  means[i] <- mean(rnorm(n, mean_n, sd_n))
+
+}
+
+hist(means)
+abline(v = mean(means), col = "red", lwd = 3)
+```
+
+## Python
+
+```{python, CLT means demo}
+#| lst-label: lst-central-limit-template-code-py
+
+means = []
+
+for i in range(40):
+  n = 200
+  mean = 4
+  sd = 1
+  
+  est_mean = np.random.normal(mean, sd, n).mean()
+
+  means.append(est_mean)
+
+plt.clf()
+plt.hist(means)
+plt.axvline(x = statistics.mean(means), color = 'r')
+plt.show()
+```
+
+
+:::
+
+The set of means from our `i` datasets, follow a normal distribution. The mean of this normal distribution is approximately the true population mean (which we know to be 4).
+
+If we increase the number of iterations/loops, we will sample more datasets, with more means.
+
+If we think of our set of sample means as a sample in itself, then doing this is effectively increasing our sample size. And, as we know from the first section of this chapter, that means that the mean of our distribution should be a better estimate of the true population value.
+
+This is exactly what happens:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, central limit means higher i}
+#| echo: false
+means <- c()
+
+for (i in 1:1000) {
+  
+  n <- 200
+  mean_n <- 4
+  sd_n <- 1
+  
+  means[i] <- mean(rnorm(n, mean_n, sd_n))
+
+}
+
+hist(means)
+abline(v = mean(means), col = "red", lwd = 3)
+text(4.15, 200, paste(round(mean(means), digits=5)), col='red')
+```
+
+## Python
+
+```{python, CLT means higher i}
+#| echo: false
+means = []
+
+for i in range(1000):
+  n = 200
+  mean = 4
+  sd = 1
+  est_mean = np.random.normal(mean, sd, n).mean()
+  means.append(est_mean)
+
+avgmean = statistics.mean(means)
+plt.clf()
+plt.hist(means)
+plt.axvline(x = avgmean, color = 'r')
+plt.text(4.15, 200, round(avgmean, 5), color='r')
+plt.show()
+```
+:::
+
+To produce the plot above, the number of iterations was set to `i = 1000`.
+
+Try setting it to something between 40 and 1000, or even more than 1000, and see how that changes things.
+
+::: {.callout-tip collapse="true"}
+#### Standard error of the mean
+
+You may have come across the concept of the standard error of the mean in the past (especially when constructing error bars for plots). But now, you should be in a better position to really understand what it is.
+
+In the histogram above, we've calculated the mean of the sample means. But around that mean of sample means, there is some spread or noise.
+
+We can quantify that spread by measuring the standard deviation of the distribution of sample means - and if we do, we've calculated the standard error.
+
+Of course, in classical statistics we usually only have one dataset, rather than 1000, to help us figure out that standard error. So, like with everything else we calculate from a dataset, we are only ever able to access an estimate of that standard error.
+:::
+
+### It's always normal
+
+The really quirky thing about the central limit theorem is that it doesn't actually matter what distribution you pulled the original samples from. In other words, the results we got above aren't just because we were using the normal distribution for our simulations.
+
+To prove that, the code here has been adapted to pull each of our 1000 samples from a uniform distribution instead, and estimate the mean.
+
+::: {.panel-tabset group="language"}
+## R
+
+Note the use of `runif` instead of `rnorm`:
+
+```{r, central limit means demo unif dist}
+means <- c()
+
+for (i in 1:1000) {
+  
+  n <- 200
+  min_n <- 1
+  max_n <- 7
+  
+  means[i] <- mean(runif(n, min_n, max_n))
+
+}
+
+hist(means)
+abline(v = mean(means), col = "red", lwd = 3)
+```
+
+## Python
+
+Note the use of `np.random.uniform` instead of `np.random.normal`:
+
+```{python, CLT means unif dist}
+means = []
+
+for i in range(1000):
+  n = 200
+  lower = 1
+  upper = 7
+  est_mean = np.random.uniform(mean, sd, n).mean()
+  means.append(est_mean)
+
+plt.clf()
+plt.hist(means)
+plt.axvline(x = statistics.mean(means), color = 'r')
+plt.show()
+```
+:::
+
+Although each of the individual samples would have a flat histogram, that's not what we're plotting here. Here, we're looking at the set of means that summarise each of those individual samples.
+
+The nature of the underlying population distribution **doesn't matter** - the distribution of the parameter estimates is still normal, which we can see clearly with a sufficient number of simulations.
+
+No wonder the normal distribution enjoys such special status in statistics.
+
+## Exercises
+
+### t-statistic under CLT {#sec-exr_tstat-CLT}
+
+All statistics obey the central limit theorem. This includes not just descriptive statistics like the mean, median, standard deviation etc., but the test statistics that we use for hypothesis testing.
+
+::: {.callout-exercise}
+
+{{< level 2 >}}
+
+To demonstrate this to yourself, generate 1000 t-statistics from one-sample t-tests, and plot them on a histogram.
+
+-   What happens to the distribution as you change `mu`?
+-   How does the distribution of 1000 t-statistics, compare to the t-statistic distribution? Why are they different?
+
+You can refer back to the code in @sec-exm_mean-CLT to help you.
+
+::: {.callout-tip collapse="true"}
+#### Code tips
+
+If you're struggling to extract the t-statistics, you might find the below code snippets to be helpful as tips/hints!
+
+::: {.panel-tabset group="language"}
+## R
+
+If you're using the base R `t.test` function:
+
+```{r, tstat exr tip1}
+#| eval: false
+t.result <- t.test(rnorm(n, mean_n, sd_n), mu = 3)
+  
+t.values[i] <- unname(t.result$statistic)
+```
+
+This first method is probably quicker/easier.
+
+If you're using `t_test` from `rstatix` (which you are likely familiar with, if you took the Core statistics course before this one):
+
+```{r, tstat exr tip2}
+#| eval: false
+
+# The data must be saved as a dataframe to use t_test
+data <- rnorm(n, mean_n, sd_n) %>%
+  data.frame()
+
+t_result <- t_test(data, .~1)
+
+t_values[i] <- unname(t_result$statistic)
+```
+
+If you're trying to sample from the t-distribution, note that the function requires different parameters - specifically, we specify the degrees of freedom `df` (and optionally, a non-centrality parameter `ncp`):
+
+```{r, sampling from tdist}
+#| eval: false
+rt(n = 1000, df = 99)
+```
+
+## Python
+
+There are a few different functions for running t-tests in Python. If you took the Core statistics course, you're likely familiar with the `ttest` function from `pingouin`.
+
+For ease of use in this exercise, however, it's easier to extract the t-statistic on each loop by indexing the output from the `ttest_mean` from `statsmodels`:
+
+```{python, sms ttest}
+#| eval: false
+sms.DescrStatsW(data).ttest_mean()[0]
+```
+
+To sample from the t-distribution, use `np.random.standard_t`:
+
+```{python, sample from standard tdist}
+#| eval: false
+np.random.standard_t(df = 99, size = 1000)
+```
+
+You will need to provide two arguments: the degrees of freedom `df`, and the sample `size`.
+:::
+:::
+:::
+
+### Distributions all the way down {#sec-exr_multilevel-CLT}
+
+Those of you with imagination might be wondering: if one for loop can construct a single histogram, giving us the distribution of the set of sample means, why can't we run multiple for loops and look at the distribution of the set of means of the set of means?
+
+The short answer is: we can!
+
+![It's distributions all the way down; [image source](https://en.wikipedia.org/wiki/Turtles_all_the_way_down)](images/turtles.jpg)
+
+::: {.callout-exercise}
+
+{{< level 3 >}}
+
+Your mission, should you choose to accept it, is to plot a single histogram that captures the distribution of the set of means of the set of means.
+
+Adapt the code in @sec-exm_mean-CLT by nesting one for loop inside the other, to produce a single histogram. It should represent the set of means of the set of sample means.
+
+Before you do, consider:
+
+-   What shape will the histogram take, if you run enough iterations?
+-   If someone asks what you did on this course, how on earth will you explain *this* to them?!
+
+::: {.callout-tip collapse="true"}
+#### Worked answer
+
+To make the code a little easier to parse and eliminate any clashes in the environment, the outside for loop uses `j` for indexing instead of `i`.
+
+We've also kept the number of iterations low-ish. You might notice, if you use a large value like 1000 for each of the loops, it takes a while to run (because you're actually asking for 1000000 total iterations!)
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, central limit nested}
+means_j <- c()
+
+for (j in 1:300) {
+
+  means_i <- c()
+
+  for (i in 1:300) {
+  
+    n <- 20
+    min_n <- 1
+    max_n <- 7
+  
+    means_i[i] <- mean(runif(n, min_n, max_n))
+
+  }
+  
+  means_j[j] <- mean(means_i)
+  
+}
+
+hist(means_j)
+abline(v = mean(means_j), col = "red", lwd = 3)
+```
+
+## Python
+
+```{python, CLT nested loops}
+means_j = []
+
+for j in range(300):
+  
+  means_i = []
+  
+  for i in range(300):
+    n = 20
+    lower = 1
+    upper = 7
+    imean = np.random.uniform(lower, upper, n).mean()
+    means_i.append(imean)
+  
+  jmean = np.mean(means_i)
+  means_j.append(jmean)
+  
+plt.clf()
+plt.hist(means_j)
+plt.axvline(x = np.mean(means_j), color = 'r')
+plt.show()
+```
+:::
+
+It's *still* normal. If this is what you guessed, well done.
+
+If you were to take this further, and add an infinite number of nested loops, you'd get a normal distribution each time.
+
+And it doesn't even matter what distribution we sample our individual datasets from, as we showed above. In this worked example code we've used the uniform distribution, but you can try swapping it out for any other distribution - you'll still get a normal distribution at each "layer", which gets clearer and clear the more iterations you run.
+
+Now, statistics may not be considered the "coolest" subject in the world - but I think that's pretty awesome, don't you?
+:::
+:::
+
+## Summary
+
+Simulation is a great way to help get your head around more difficult or abstract statistical concepts, without needing to worry about the mathematical formulae.
+
+The central limit theorem is incredibly boring to explain via equations, and much less easy to get your head around - so why not just simulate?
+
+::: {.callout-tip}
+#### Key Points
+
+-   We are more likely to accurately and precisely "recover" the true population parameters when our sample is large and unbiased
+-   The central limit theorem shows that, across a number of samples, the set of estimates of a given parameter will follow an approximately normal distribution 
+-   When the number of samples = $\infty$, it will be perfectly normal
+-   This is true regardless of the original distribution that the individual samples come from
+:::
+
+

@@ -3,25 +3,6 @@ title: "Simulation basics"
 output: html_document
 ---
 
-```{r setupr, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-library(tidyverse)
-library(rstatix)
-library(performance)
-library(ggResidpanel)
-library(MASS)
-library(pwr)
-```
-
-```{python setuppy, include=FALSE}
-import pandas as pd
-import numpy as np
-import random
-import statistics
-import matplotlib.pyplot as plt
-from plotnine import *
-```
-
 ```{r, source file}
 #| echo: false
 #| message: false

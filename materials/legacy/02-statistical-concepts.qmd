@@ -3,26 +3,6 @@ title: "Revisiting statistical concepts"
 output: html_document
 ---
 
-```{r setupr, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-library(tidyverse)
-library(rstatix)
-library(performance)
-library(ggResidpanel)
-library(MASS)
-library(pwr)
-```
-
-```{python setuppy, include=FALSE}
-import pandas as pd
-import numpy as np
-import random
-import statistics
-import matplotlib.pyplot as plt
-import statsmodels.stats.api as sms
-from scipy.stats import t
-```
-
 ```{r, source file}
 #| echo: false
 #| message: false

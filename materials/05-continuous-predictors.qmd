@@ -1,0 +1,356 @@
+---
+title: "Simulating continuous predictors"
+output: html_document
+---
+
+```{r}
+#| echo: false
+#| message: false
+#| results: hide
+source(file = "setup_files/setup.R")
+```
+
+```{python}
+#| echo: false
+#| message: false
+exec(open('setup_files/setup.py').read())
+import shutup;shutup.please()
+```
+
+In this and the next couple of chapters, we're going to simulate a dataset about golden toads, an extinct species of amphibians. 
+
+We'll simulate various predictor variables, and their relationship to the clutch size (number of eggs) produced by a given toad.
+
+In this chapter, we'll start by looking at continuous predictor variables.
+
+![Here's what the fancy little guys looked like! [image source](https://en.wikipedia.org/wiki/Golden_toad#/media/File:Bufo_periglenes2.jpg)](images/goldentoad.png){width=50%}
+
+## Libraries and functions
+
+::: {.callout-note collapse="true"}
+## Click to expand
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, load libraries}
+#| eval: false
+
+library(tidyverse)
+library(rstatix)
+
+# These packages will be used for evaluating the models we fit to our simulated data
+library(performance)
+library(ggResidpanel)
+
+# This package is optional/will only be used for later sections in this chapter
+library(MASS)
+```
+
+## Python
+```{python, import libraries}
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+from patsy import dmatrix
+```
+
+:::
+:::
+
+## Step 1: Set seed and sample size
+
+First, we set a seed and a sample size: 
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, set seed/n}
+set.seed(20)
+
+# sample size
+n <- 60
+```
+
+## Python
+
+```{python, seed/n}
+np.random.seed(25)
+
+# sample size
+n = 60
+```
+
+:::
+
+## Step 2: Generate values of predictor variable
+
+The next step is to generate our predictor variable.
+
+There's no noise or uncertainty in our predictor (remember that residuals are always in the y direction, not the x direction), so we can just produce the values by sampling from a distribution of our choice.
+
+One of the things that can cause variation in clutch size is the size of the toad herself, so we'll use that as our continuous predictor. This sort of biological variable would probably be normally distributed, so we'll use `rnorm` to generate it.
+
+Google tells us that the average female golden toad was somewhere in the region of 42-56mm long, so we'll use that as a sensible basis for our normal distribution for our predictor variable `length`.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, generate length variable}
+length <- rnorm(n, 48, 3)
+```
+
+## Python
+
+```{python, generate predictor length}
+length = np.random.normal(48, 3, n)
+```
+:::
+
+## Step 3: Simulate average values of response variable
+
+Now, we need to simulate our response variable, `clutchsize`.
+
+We're going to do this by setting up the linear model. We'll specify a y-intercept for `clutchsize`, plus a gradient that captures how much `clutchsize` changes as `length` changes.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, set beta parameters}
+b0 <- 175
+b1 <- 2
+
+sdi <- 20
+```
+
+## Python
+
+```{python, beta params}
+b0 = 175
+b1 = 2
+
+sdi = 20
+```
+
+:::
+
+We've also added an `sdi` parameter. This captures the standard deviation *around* the model predictions that is due to other factors we're not measuring. In other words, this will determine the size of our residuals.
+
+Now, we can simulate our set of predicted values for `clutchsize`.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, simulate avg response}
+avg_clutch <- b0 + b1*length
+```
+
+## Python
+
+```{python, sim avg response}
+avg_clutch = b0 + b1*length
+```
+:::
+
+You'll notice we've just written out the equation of our model.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, visualise dataset using average response}
+tibble(length, avg_clutch) %>%
+  ggplot(aes(x = length, y = avg_clutch)) +
+  geom_point()
+```
+
+We use the `tibble` function to combine our response and predictor variables together into a single dataset.
+
+## Python
+
+```{python, visualise data with avg response}
+tempdata = pd.DataFrame({'length': length, 'avg_clutch': avg_clutch})
+
+tempdata.plot.scatter(x = 'length', y = 'avg_clutch')
+plt.show()
+```
+
+We use the `pd.DataFrame` function to stitch our arrays together into a single dataframe object with multiple columns.
+
+:::
+
+When we visualise `length` and `avg_clutch` together, you see they perfectly form a straight line. That's because `avg_clutch` doesn't contain the residuals - that comes next.
+
+## Step 4: Simulate actual values of response variable
+
+The final step is to simulate the actual values of clutch size. 
+
+Here, we'll be drawing from a normal distribution. We put `avg_clutch` in as our mean - this is because the set of actual clutch size values should be normally distributed around our set of predictions.
+
+Or, in other words, we want the residuals/errors to be normally distributed.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, simulate response}
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(clutchsize, length)
+```
+
+## Python
+
+```{python, sim response var}
+clutchsize = np.random.normal(avg_clutch, sdi, n)
+
+goldentoad = pd.DataFrame({'length': length, 'clutchsize': clutchsize})
+```
+:::
+
+## Step 5: Checking the dataset
+
+Let's make sure our dataset is behaving the way we intended.
+
+First, we'll visualise it:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, visualise final dataset}
+ggplot(goldentoad, aes(x = length, y = clutchsize)) +
+  geom_point()
+```
+
+## Python
+
+```{python, visualise the data}
+goldentoad.plot.scatter(x = 'length', y = 'clutchsize')
+plt.show()
+```
+:::
+
+And then, we'll construct a linear model - and check that our beta coefficients have been replicated to a sensible level of precision!
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, fit simple linear regression}
+lm_golden <- lm(clutchsize ~ length, goldentoad)
+
+summary(lm_golden)
+```
+
+## Python
+
+```{python, fit regression model}
+model = smf.ols(formula= "clutchsize ~ length", data = goldentoad)
+
+lm_golden = model.fit()
+print(lm_golden.summary())
+```
+:::
+
+Not bad at all. The linear model has managed to extract beta coefficients similar to the original `b0` and `b1` that we set.
+
+If you're looking to explore and understand this further, try exploring the following things in your simulation, and see how they affect the p-value and the precision of the beta estimates:
+
+-   Varying the sample size
+-   Varying the `sdi`
+-   Varying the `b1` parameter
+
+
+## Exercises
+
+### A second continuous predictor {#sec-exr_second-cont-pred}
+
+::: {.callout-exercise}
+{{< level 1 >}}
+
+Create at least one additional continuous predictor for the dataset (perhaps `temperature` or `age` of toad).
+
+Follow the same procedure described above:
+
+-   Set seed & sample size
+-   Set beta coefficients
+-   Use model equation to simulate average/expected values of `clutchsize`
+-   Simulate actual values of `clutchsize`, with random noise
+-   Check the dataset
+
+Don't worry about being biologically plausible - just pick some numbers. We're focusing on the simulation here, not on perfect realism in the dataset!
+:::
+
+### A brand new dataset {#sec-exr_another-dataset}
+
+::: {.callout-exercise}
+{{< level 2 >}}
+
+To practice this process, set up another dataset of your own to simulate, containing at least one categorical predictor and a continuous response.
+
+You'll need to:
+
+-   Set the seed and sample size
+-   Set values of `b0` and `b1`
+-   Construct the predictor variable by sampling from some distribution
+-   Simulate the average and then actual values of the response
+-   Construct a scatterplot and run a regression, to check your simulation ran as expected
+
+Adapt the code from the `goldentoad` example above to achieve this.
+
+Feel free to pick your own example, but if you're looking for inspiration, here are a couple of ideas.
+
+(Remember - biological plausibility doesn't actually matter, so don't get too hung up on it!)
+
+::: {.callout-tip collapse="true"}
+#### Invasive plants
+
+Continuous response variable: **Area invaded per year** (m^2^/year)
+
+The typical range will be between ~ 10-1000 m^2^/year.
+
+Continuous predictor: **Annual rainfall** (mm)
+
+A sensible range would be 400-1600mm. Many invasive plants will thrive in wetter environments.
+
+Continuous predictor: **Soil pH**
+
+A sensible range would be 4.5-8.5.
+:::
+
+::: {.callout-tip collapse="true"}
+#### Gut microbiome & blood glucose
+
+Continuous response variable: **Blood glucose level** (mg/dL)
+
+Somewhere in the range 70-120 mg/dL would be typical (the upper end would be considered pre-diabetic).
+
+Continuous predictor: **Fibre intake** (g/day)
+
+Would usually be in the region of 5-50 g/day. Higher fibre would be associated with lower glucose, usually.
+
+Continuous predictor: **Abundance of bacteroides** (%)
+
+The usual range would be 0-30%; higher levels sometimes correlate with better metabolism.
+:::
+
+:::
+
+## Summary
+
+In this chapter, we've simulated two-dimensional data for the first time.
+
+First, we construct a continuous variable to act as a predictor. Then, we can simulate our response variable as a function of the predictor variable(s) via a linear model equation, with residuals added.
+
+By definition, the assumptions of the linear model will be always be met, because we are in control of the nature of the underlying population. 
+
+However, our model may or may not do a good job of "recovering" the original beta coefficients we specified, depending on the sample size and the amount of error we introduce in our simulation.
+
+::: {.callout-tip}
+#### Key Points
+
+-   Predictor variables can be simulated from different distributions, with no errors associated
+-   Response variables should be simulated with errors/residuals from the normal distribution
+-   To do this, we need to specify the equation of the straight line, i.e., the intercept and slope beta coefficients, as parameters in the simulation
+:::
