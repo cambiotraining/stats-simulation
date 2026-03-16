@@ -70,7 +70,7 @@ First, we set the important parameters. This includes the beta coefficients.
 ::: {.callout-note collapse="true"}
 #### You might notice...
 
-that we've increase the sample size from previous chapters, and tweaked beta0.
+... that we've increased the sample size from previous chapters, and tweaked beta0.
 
 This is to give our model a fighting chance to recover some sensible estimates at the end, and also to keep the values of our final `clutchsize` variable within some sensible biological window.
 

@@ -13,6 +13,12 @@ book:
         - materials/05-continuous-predictors.qmd
         - materials/06-categorical-predictors.qmd
         - materials/07-interactions.qmd
+    - part: "Power & design analysis"
+      chapters:
+        - materials/08-power-analysis.qmd
+    #- part: "Experimental design concepts"
+    #  chapters:
+    #    - materials/09-collinearity.qmd
     # - part: "More complex datasets"
     #   chapters:
     #     - materials/00-noncontinuous-responses.qmd

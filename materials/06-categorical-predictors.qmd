@@ -1,5 +1,5 @@
 ---
-title: "Simulating continuous predictors"
+title: "Simulating categorical predictors"
 output: html_document
 ---
 

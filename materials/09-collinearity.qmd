@@ -1,0 +1,873 @@
+---
+title: "Collinear predictors"
+output: html_document
+---
+
+```{r}
+#| echo: false
+#| message: false
+#| results: hide
+source(file = "setup_files/setup.R")
+```
+
+```{python}
+#| echo: false
+#| message: false
+exec(open('setup_files/setup.py').read())
+import shutup;shutup.please()
+```
+
+## Libraries and functions
+
+::: {.callout-note collapse="true"}
+## Click to expand
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, load libraries}
+#| eval: false
+
+library(tidyverse)
+library(rstatix)
+
+library(MASS)
+
+library(performance)
+library(ggResidpanel)
+library(GGally)
+```
+
+## Python
+```{python, import libraries}
+import numpy as np
+import pandas as pd
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+import pingouin as pg
+
+from patsy import dmatrix
+```
+:::
+:::
+
+In this chapter, we'll look at how you can practice simulating collinear predictor variables.
+
+We'll start with a quick primer on what collinearity actually is, and then we'll look at two different methods for simulating.
+
+The first of the methods is easier and quicker, but the second method is better - and will set you up with knowledge for later chapters in these materials, too, most notably simulating hierarchical datasets.
+
+## What is collinearity?
+
+Hopefully, by the end of this chapter, you will have a clear answer to this question.
+
+However, the short version to kick us off:
+
+We say that **variables are collinear if they are what's called "linearly dependent"** - in other words, one can be written as a function of the other(s), such that we can predict the variables from each other.
+
+Another way of thinking about it is that the variables **contain a lot of the same "information" as each other**, from the point of view of explaining variance in the response variable. This means they will be closely correlated.
+
+### Causes of collinearity
+
+Sometimes, collinearity is due to user error - the data have been coded badly in some way, or the experimental design hasn't been thought through. 
+
+Other times, it's not something that could be avoided by the researcher, but still needs to be considered.
+
+Common causes of collinearity include:
+
+-   Redundancy in variables, e.g., including both `savings` and `income` to measure wealth
+-   Including composite values alongside their components, e.g., `tail_length`, `body_length` and `total_length` all in the same dataset
+-   Bad dummy coding (we'll simulate an example of this later on)
+-   Measuring multiple variables that capture the same underlying construct, e.g., `IQ` and `cognitive_ability` both measuring general intelligence
+-   Shared "latent" variables, e.g., `shark_attacks` and `icecream_sales` are both impacted by weather and thus highly correlated
+-   Genuine correlation between variables, e.g., `mothers_height` and `fathers_height` (assuming tall people often pair up with other tall people)
+
+## Simulating collinear continuous predictors
+
+Let's return to our `goldentoads` example and simulate a new version of this dataset that contains two collinear continuous predictors.
+
+This version of the dataset will contain the following variables:
+
+- `clutchsize`, our continuous response
+- `pond`, a categorical predictor (A, B, C)
+- `length`, the length of the toads
+- `age`, the age of the toads
+
+We're going to make `age` and `length` collinear. This makes some sense, biologically: animals grow bigger with age!
+
+```{r, sim goldentoad collinear}
+#| echo: false
+set.seed(20)
+
+n <- 120
+b0 <- 170
+b1 <- 2
+b2 <- 1.5
+b3 <- c(0, 30, -10)
+sdi <- 10
+
+rho <- 0.96
+
+cor_matrix <- matrix(c(1, rho,   
+                     	 rho, 1), 
+                nrow = 2, byrow = TRUE)
+z <- mvrnorm(n, mu=c(0, 0), Sigma=cor_matrix)
+length <- z[,1] * 3 + 48
+age <- z[,2] * 0.5 + 7
+
+clutchsize <- rnorm(n,
+                    b0 + b1*length + b2*age,
+                    sdi)
+
+age <- round(age, digits=1)
+length <- round(length, digits=1)
+clutchsize <- round(clutchsize)
+
+goldentoad <- tibble(age, length, clutchsize)
+```
+
+```{python, goldentoad collinear quick simulate}
+#| echo: false
+np.random.seed(20)
+
+n = 120
+b0 = 170
+b1 = 2
+b2 = 1.5
+b3 = np.array([0, 30, -10])
+
+sdi = 10
+
+rho = 0.96
+
+mean = [0, 0]
+cov = [[1, rho], [rho, 1]]
+z = np.random.multivariate_normal(mean, cov, size=n)
+length = z[:,0] * 3 + 48
+age = z[:,1] * 0.5 + 7
+
+pond = np.repeat(["A", "B", "C"], repeats = n//3)
+Xpond = dmatrix('0 + C(pond)', data = {'pond': pond})
+
+clutchsize = np.random.normal(b0 + b1*length + b2*age + np.dot(Xpond, b3), sdi, n)
+
+goldentoad = pd.DataFrame({'length': np.round(length, 1), 'pond': pond, 'age': np.round(age,1), 'clutchsize': np.round(clutchsize,0)})
+```
+
+As a sneak peak, this is what we'll produce:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, show goldentoad data}
+head(goldentoad)
+```
+
+## Python
+
+```{python, head goldentoad data}
+goldentoad.head()
+```
+:::
+
+We can see the strong correlation between `age` and `length` if we construct a scatterplot:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, age/length scatterplot}
+ggplot(goldentoad, aes(x = length, y = age)) +
+  geom_point()
+```
+
+## Python
+
+```{python, scatterplot age/length}
+plt.clf()
+plt.scatter(length, age)
+plt.show()
+```
+:::
+
+So: how do we create that?
+
+### The multivariate normal distribution
+
+One method (which is particularly useful to learn now, if you plan to simulate hierarchical datasets later) is to sample our predictor variables from a multivariate normal distribution.
+
+::: {.callout-note collapse="true"}
+#### What does "multivariate normal" mean?
+
+The short version is that a set of variables are multivariate normal if they each follow a normal distribution, while also having some specific correlation structure with each other.
+
+For example, here's a bivariate normal distribution:
+
+```{r, visualising bivariate norm distribution}
+#| echo: false
+set.seed(10)
+
+rho <- 0.7
+
+cor_matrix <- matrix(c(1, rho,   
+                     	 rho, 1), 
+                nrow = 2, byrow = TRUE)
+vars <- mvrnorm(n, mu=c(0, 0), Sigma=cor_matrix)
+x <- vars[,1]
+y <- vars[,2]
+
+mvdata <- tibble(x, y)
+
+p1 <- ggplot(mvdata, aes(x, y )) +
+  theme_classic() +
+  stat_ellipse(geom = "polygon", level = 0.9, alpha = 0.3, fill="grey") +
+  geom_point()
+
+set.seed(2)
+intnorm <- rnorm(100000, 0, 1)
+slopenorm <- rnorm(100000, 0, 1)
+
+p2 <- ggplot(data.frame(intnorm), aes(intnorm)) + 
+  geom_density(fill = "grey") +
+  theme_void()
+
+p3 <- ggplot(data.frame(slopenorm), aes(slopenorm)) + 
+  geom_density(fill = "grey") +
+  theme_void() + coord_flip()
+
+design <- "
+22222#
+111113
+111113
+111113
+111113
+"
+
+p1 + p2 + p3 + plot_layout(design = design)
+```
+
+We have two variables, `x` and `y`, with a positive correlation (in this case, ~0.7). If we look at either `x` or `y` in isolation, we see that they are each normally distributed.
+
+This scales up regardless of how many predictors we have. Here's a "quadravariate" normal distribution (4 variables):
+
+```{r, visualising quadravariate norm distribution}
+#| echo: false
+set.seed(10)
+
+n <- 1000
+
+rho01 <- 0.7
+rho02 <- 0.3
+rho03 <- -0.1
+rho12 <- 0.4
+rho13 <- -0.2
+rho23 <- 0.5
+
+cor_matrix <- matrix(c(1, rho01, rho02, rho03,   
+                     	 rho01, 1, rho12, rho13,
+                       rho02, rho12, 1, rho23,
+                       rho03, rho13, rho23, 1), 
+                nrow = 4, byrow = TRUE)
+vars <- mvrnorm(n, mu=c(0, 0, 0, 0), Sigma=cor_matrix)
+w <- vars[,1]
+x <- vars[,2]
+y <- vars[,3]
+z <- vars[,4]
+
+mvdata <- tibble(w, x, y, z)
+
+GGally::ggpairs(mvdata)
+```
+
+Visualising is a little harder - we kind of have to split things up into pairs - but the idea remains the same. Each pair of variables has some correlation between them, and each individual variable when looked at in isolation appears normal.
+:::
+
+Let's adapt the workflow we've been using so far, to make `age` and `length` bivariate normal.
+
+::: {.panel-tabset group="language"}
+## R
+
+We set the parameters as normal, with two extra additions: `rho` and `cor_matrix`.
+
+This is because, when simulating from a multivariate normal distribution, we need a correlation matrix. We're soft-coding `rho`, which forms a key part of our correlation matrix.
+
+Correlation matrices are always mirrored across the diagonal, `rho` is repeated twice - that's intentional.
+
+(The 1s in the correlation matrix correspond to the perfect correlation that a variable will have with itself.)
+
+```{r, params for mvn age/length}
+set.seed(20)
+
+n <- 120
+
+b0 <- 170
+b1 <- 2
+b2 <- 1.5
+b3 <- c(0, 30, -10)
+
+sdi <- 10
+
+rho <- 0.8
+
+cor_matrix <- matrix(c(1, rho,   
+                      rho, 1), 
+                nrow = 2, byrow = TRUE)
+```
+
+Then, we're going to use the `mvrnorm` function from the `MASS` package (which you'll need to load, if you haven't already) to simulate from the multivariate normal distribution.
+
+It takes three arguments:
+
+- `n`, the sample size
+- `mu`, a vector of means (one per variable in the distribution)
+- `Sigma`, the correlation matrix
+
+```{r, zscores for mvn age/length}
+z <- mvrnorm(n, mu=c(0, 0), Sigma=cor_matrix)
+```
+
+The object we've just created, `z`, doesn't have the scale we want yet. We have effectively simulated two sets of z-scores with a set correlation between them.
+
+We can now rescale those z-scores with our desired standard deviation and mean for each individual variable. We're using the format `z*sd + mean`:
+
+```{r, cont preds for mvn age/length}
+length <- z[,1]*3 + 48
+age <- z[,2]*0.5 + 7
+
+hist(length)
+hist(age)
+```
+
+Now, we continue with the rest of the simulation as we did before, including generating our `pond` categorical variable.
+
+```{r, final dataset for mvn age/length}
+pond <- rep(c("A", "B", "C"), each = n/3)
+
+avg_clutch <- b0 + b1*length + b2*age + model.matrix(~0+pond) %*% b3
+
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(pond, age, length, clutchsize)
+```
+
+## Python
+
+We set the parameters as normal, with two extra additions: `rho` and `cor_mat`.
+
+This is because, when simulating from a multivariate normal distribution, we need a correlation matrix. We're soft-coding `rho`, which forms a key part of our correlation matrix `cor_mat`.
+
+Correlation matrices are always mirrored across the diagonal, `rho` is repeated twice - that's intentional.
+
+(The 1s in the correlation matrix correspond to the perfect correlation that a variable will have with itself.)
+
+```{python, mvn age/length params}
+np.random.seed(24)
+
+n = 120
+b0 = 170
+b1 = 2
+b2 = 1.5
+b3 = np.array([0, 30, -10])
+
+sdi = 10
+
+rho = 0.8
+cov_mat = [[1, rho], 
+           [rho, 1]]
+```
+
+Then, we're going to use the `np.random.multivariate_normal` function to sample from the multivariate normal distribution.
+
+It takes three arguments:
+
+- `mean`, a vector of means (one per variable in the distribution)
+- `cov`, the correlation matrix
+- `size`, or `n`
+
+```{python, mvn age/length zobject}
+z = np.random.multivariate_normal(mean = [0, 0], cov = cov_mat, size = n)
+```
+
+The object we've just created, `z`, doesn't have the scale we want yet. We have effectively simulated two sets of z-scores with a set correlation between them.
+
+We can now rescale those z-scores with our desired standard deviation and mean for each individual variable. We're using the format `z*sd + mean`:
+
+```{python, mvn age/length predictors}
+length = z[:,0]*3 + 48
+age = z[:,1]*0.5 + 7
+```
+
+Now, we continue with the rest of the simulation as we did before, including generating our `pond` categorical variable.
+
+```{python, mvn age/length dataset}
+pond = np.repeat(["A", "B", "C"], repeats = n//3)
+Xpond = dmatrix('0 + C(pond)', data = {'pond': pond})
+
+clutchsize = np.random.normal(b0 + b1*length + b2*age + np.dot(Xpond, b3), sdi, n)
+
+goldentoad = pd.DataFrame({'length': length, 'pond': pond, 'age': age, 'clutchsize': clutchsize})
+```
+:::
+
+## Checking for collinearity
+
+Now we've got a dataset with some collinear predictors, let's see if we can spot the issues it's causing.
+
+#### Look at the beta coefficients
+
+There are a few different clues that might show up in a model output that might indicate collinearity:
+
+-   Very high standard errors for the coefficients
+-   The overall model is significant, but individual coefficients aren't
+-   Large changes in coefficients as you add/remove predictors
+-   Coefficients with the opposite sign to what you'd expect, based on theory
+
+Also, if you happen to be lucky enough to have multiple datasets, the coefficients might differ wildly between samples. If your sample is big enough, you could also split it in half to test this.
+
+Let's see if any of this shows up in our simulated dataset.
+
+We'll start by fitting the additive model.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, mvn age/length fit model}
+lm_golden <- lm(clutchsize ~ length + age + pond, data = goldentoad)
+summary(lm_golden)
+```
+
+With a seed of 20, as we've used here, one of those problems is already appearing - `age` has a negative coefficient here. 
+
+Now I don't personally know much about toads, but I probably would've expected clutch size to increase with age!
+
+## Python
+
+```{python, fit model mvn age/length}
+model = smf.ols(formula= "clutchsize ~ length + age + pond", data = goldentoad)
+
+lm_golden = model.fit()
+print(lm_golden.summary())
+```
+:::
+
+Let's fit a model without `age`:
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, drop age/length}
+lm_noage <- lm(clutchsize ~ length + pond, data = goldentoad)
+summary(lm_noage)
+```
+
+## Python
+
+```{python, dropping age/length}
+model = smf.ols(formula= "clutchsize ~ length + pond", data = goldentoad)
+lm_noage = model.fit()
+print(lm_noage.summary())
+```
+:::
+
+When we drop `length`, the `age` coefficient does seem to jump up quite a bit; this is not the best sign.
+
+#### Check for correlations
+
+One clue that we have collinearity between predictors is if we see strong/concerning correlations between them, just by visualisng the dataset.
+
+::: {.panel-tabset group="language"}
+## R
+
+The `ggpairs` function from the `GGally` package is quite a nice way of visualising the pairwise relationships between predictors. 
+
+(This function is essentially the `ggplot` equivalent of the base R `pairs` function.)
+
+```{r, visualise pairs correlation}
+#| warning: false
+#| error: false
+goldentoad %>%
+  dplyr::select(-clutchsize) %>%
+  GGally::ggpairs()
+```
+
+## Python
+
+We can use the `pairplot` (or similar `PairGrid`) functions from `seaborn` to visualise our variables in a pairwise manner.
+
+```{python, visualise pairwise correlations}
+#| warning: false
+#| error: false
+g = sns.pairplot(goldentoad, hue = 'pond')
+plt.show()
+```
+
+Note: it's not particularly groundbreaking that all our predictors seem to have a relationship with `clutchsize` - this is to be expected. This isn't collinearity, because `clutchsize` is a response, not a predictor!
+:::
+
+Just from visual examination, the correlation between `age` and `length` is clear here; that's a bit of a red flag.
+
+#### Variance Inflation Factor (VIF)
+
+Last but definitely not least, we can calculate something called the **V**ariance **I**nflation **F**actor (VIF) for each predictor. 
+
+The VIF is a measure how much of the variance in each predictor can be explained by the other predictors. 
+
+It's calculated by running a regression model for each predictor variable in question, regressing it onto all the other predictors (i.e., predicting one predictor using all the other predictors). The VIF value is calculated from the resulting model's R^2^ value, so we get one VIF value per predictor.
+
+Typically, a VIF >5 is worth checking, and a VIF >10 is definitely concerning.
+
+::: {.panel-tabset group="language"}
+## R
+
+We're going to use two functions from the `performance` package to help us with this.
+
+The `check_collinearity` function will print the VIF values in a table, but we could also use `check_model` to print the VIF plot, if we prefer the graphical version.
+
+```{r, check collinearity mvn age/length}
+check_collinearity(lm_golden)
+
+check_model(lm_golden, check = "vif")
+```
+
+## Python
+
+Checking VIF/collinearity in Python is not quite so neat and simple as in R. You could absolutely functionise the following code, but here's the full version.
+
+(Note: we have to dummy-code our categorical variables first before passing them through the `variance_inflation_factor` function, which is partly why there's so much code here!)
+
+```{python, mvn age/length check vif/collin}
+from statsmodels.tools.tools import add_constant
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+# construct object to pass through VIF function
+predictors = ['length', 'age', 'pond']
+X_encoded = pd.get_dummies(goldentoad[predictors].copy(), drop_first=True)
+X_encoded = X_encoded.astype(float)
+X = add_constant(X_encoded)
+
+# compute VIFs
+vif = pd.DataFrame()
+vif["variable"] = X.columns
+vif["VIF"] = [variance_inflation_factor(X.values, i) for i in range(X.shape[1])]
+
+print(vif)
+```
+:::
+
+Something strange has happened.
+
+**The VIF values are not high** - they're all well below 5!
+
+In other words, even though we constructed our dataset to have a strong correlation between two predictors, our test for collinearity doesn't pick up an issue.
+
+## Increasing collinearity
+
+There are a few things we could change to make the issue more apparent.
+
+#### Increase the correlation
+
+We've used a `rho` of 0.8 in our simulation above. That's high, but we could go higher; and if we did, the VIF values would also increase.
+
+If `rho` > 0.9, the VIF would be > 10. If we set `rho` > 0.95, the VIF would explode to > 25.
+
+Re-run the simulation with different values of `rho`, and see how that changes the VIF.
+
+#### Add additional predictors {#sec-mat_add-corr-predictors}
+
+We've  only got two correlated predictors here, simulated from a bivariate normal distribution.
+
+If, however, we had three or four variables all from the same multivariate normal distribution, we'd get higher VIFs for each of them, even with smaller values of `rho` for the individual correlations.
+
+One of the exercises in this chapter (@sec-exr_add-corr-predictors) will ask you to try this for yourself. You might prefer to skip ahead and attempt that now, before continuing with the rest of the chapter.
+
+#### An alternative simulation method
+
+The way we've simulated our predictors, via a multivariate normal distribution, has them correlated but still independent.
+
+There is some built-in variance in each predictor that isn't explained by the other, and that keeps the VIF quite low.
+
+However, if we simulate one variable **as a function** of the other, we can ensure that there is a high "linear dependency" between them.
+
+::: {.panel-tabset group="language"}
+## R
+
+The key difference here is the way we generate `age`:
+
+```{r, collinear via functional dependence}
+set.seed(20)
+
+n <- 120
+b0 <- 170
+b1 <- 2
+b2 <- 1.5
+b3 <- c(0, 30, -10)
+sdi <- 10
+
+rho <- 0.7
+
+length <- rnorm(n, 48, 3)
+age <- rho*length + rnorm(n, -40, 0.5)
+
+pond <- rep(c("A","B","C"), each = n/3)
+
+avg_clutch <- b0 + b1*length + b2*age + model.matrix(~0+pond) %*% b3
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+goldentoad <- tibble(age, length, clutchsize)
+```
+
+Now, when we check the VIF values, we see they are much bigger than before:
+
+```{r, check VIF again}
+lm_golden <- lm(clutchsize ~ length + age + pond, data = goldentoad)
+
+check_collinearity(lm_golden)
+```
+
+## Python
+
+The key difference here is the way we generate `age`:
+
+```{python, functional dependence for collinear}
+np.random.seed(20)
+
+n = 120
+b0 = 170
+b1 = 2
+b2 = 1.5
+b3 = np.array([0, 30, -10])
+
+sdi = 10
+
+rho = 0.7
+
+length = np.random.normal(48, 3, n)
+age = rho*length + np.random.normal(-40, 0.5, n)
+
+pond = np.repeat(["A", "B", "C"], repeats = n//3)
+Xpond = dmatrix('0 + C(pond)', data = {'pond': pond})
+
+clutchsize = np.random.normal(b0 + b1*length + b2*age + np.dot(Xpond, b3), sdi, n)
+
+goldentoad = pd.DataFrame({'length': length, 'pond': pond, 'age': age, 'clutchsize': clutchsize})
+```
+
+Now, when we check the VIF values, we see they are much bigger than before:
+
+```{python, check vif/collin again}
+predictors = ['length', 'age', 'pond']
+X_encoded = pd.get_dummies(goldentoad[predictors].copy(), drop_first=True)
+X_encoded = X_encoded.astype(float)
+X = add_constant(X_encoded)
+
+vif = pd.DataFrame()
+vif["variable"] = X.columns
+vif["VIF"] = [variance_inflation_factor(X.values, i) for i in range(X.shape[1])]
+
+print(vif)
+```
+:::
+
+Even with a lower value of `rho`, the collinearity is now much more obvious in our testing.
+
+Why? Well, think about the definition of collinearity: it's when variables are "linearly dependent", i.e., you can predict them from each other.
+
+Since we created one of our predictors directly from the other, the underlying noise in our initial predictor is "carried over" to the other one. Even with the extra bit of noise we added on top of that, they're still strongly linked.
+
+This gives a greater degree of "predictability" than when we simulated them both from a multivariate normal distribution, where their errors/noise were independent. 
+
+
+## The impact of collinearity
+
+Now that we've got a dataset where the collinearity issue is detectable, let's use it to explore the impact of collinearity on our model.
+
+### Poor inferences
+
+The main issue with collinearity is that it makes it impossible for us to make good inferences about the predictors individually.
+
+### Goodness-of-fit
+
+In contrast to the issue above, goodness-of-fit for the overall model is actually *not* affected by collinearity.
+
+In other words: although we can't separate our two collinear variables, this is only a problem if we're actually trying to separate them.
+
+If we're happy to let them work and blur together, they will lead to a model with a higher R^2^ value than either of the two variables by themselves.
+
+
+## Simulating collinear categorical predictors
+
+In the section above, we included `pond` in our simulation, but it wasn't involved in the collinearity and always had a low VIF, as intended.
+
+But categorical variables can also have high VIF values. Let's simulate some situations where that happens.
+
+### The "dummy variable trap"
+
+One of the most common causes of collinearity is actually just a skill issue on the part of the data analyst. It's an easy mistake to make, but it's problematic.
+
+In this simulation, we'll use the design matrix to encode our `pond` variable as three separate variables, each of which is binary (0 or 1).
+
+::: {.panel-tabset group="language"}
+## R
+
+We use the `model.matrix` output as a dataframe, to generate our three binary predictors:
+
+```{r, pond dummy trap}
+set.seed(20)
+
+n <- 24
+b0 <- 175             # intercept
+b1 <- c(0, 30, -10)   # main effect of pond
+sdi <- 10
+
+pond <- rep(c("A","B","C"), each = n/3)
+
+avg_clutch <- b0 + model.matrix(~0+pond) %*% b1
+clutchsize <- rnorm(n, avg_clutch, sdi)
+
+ponds <- as.data.frame(model.matrix(~0+pond))
+collineartoads <- tibble(ponds, clutchsize)
+```
+
+If we try to fit a model to these data, something slightly odd will happen:
+
+```{r, check pond dummy trap data}
+lm_collineartoads <- lm(clutchsize ~ pondA + pondB + pondC, data = collineartoads)
+summary(lm_collineartoads)
+```
+
+The `pondC` variable is essentially ignored entirely by our model. Why?
+
+Well, it doesn't contain any information that isn't already captured by our `pondA` and `pondB` columns. If both of those columns contain a 0, then we already know - without looking across to the `pondC` column - that this must be an observation from `pondC`.
+
+The same is true for all three of our binary variables - each of them is redundant in the face of our other two binary variables.
+
+## Python
+
+We use the `dmatrix` output as a dataframe, to generate our three binary predictors:
+
+```{python, create collinear pond data}
+np.random.seed(20)
+
+n = 24
+b0 = 175                        # intercept
+b1 = np.array([0, 30, -10])     # main effect of pond
+
+sdi = 10
+
+pond = np.repeat(["A", "B", "C"], repeats = n//3)
+Xpond = dmatrix('0 + C(pond)', data = {'pond': pond})
+
+avg_clutch = b0 + np.dot(Xpond, b1)
+clutchsize = np.random.normal(avg_clutch, sdi, n)
+
+collineartoads = pd.DataFrame({'pondA':Xpond[:,0], 'pondB':Xpond[:,1], 'pondC':Xpond[:,2], 'clutchsize':clutchsize})
+```
+
+If we check the VIF values for these three predictors, like so:
+
+```{python, check vif collinear ponds}
+#| warning: false
+#| error: false
+predictors = ['pondA', 'pondB', 'pondC']
+X_encoded = pd.get_dummies(collineartoads[predictors].copy(), drop_first=True)
+X_encoded = X_encoded.astype(float)
+X = add_constant(X_encoded)
+
+vif = pd.DataFrame()
+vif["variable"] = X.columns
+vif["VIF"] = [variance_inflation_factor(X.values, i) for i in range(X.shape[1])]
+
+print(vif)
+```
+
+we get infinite values for all of them.
+
+Why?
+
+Well, think about the `pondC` variable: it doesn't contain any information that isn't already captured by our `pondA` and `pondB` columns. If both of those columns contain a 0, then we already know - without looking across to the `pondC` column - that this must be an observation from `pondC`.
+
+The same is true for all three of our binary variables - each of them is redundant in the face of our other two binary variables.
+:::
+
+
+
+
+
+### Shared latent variable
+
+Sometimes, user error isn't the problem - there might instead be some third, unmeasured/unmeasurable variable that has an impact on both of the categorical predictors.
+
+
+
+
+
+
+## Exercises
+
+### Additional correlated predictors {#sec-exr_add-corr-predictors}
+
+::: {.callout-exercise}
+{{< level 3 >}}
+
+In the written materials above (@sec-mat_add-corr-predictors), we mentioned that having three or four predictors all simulated from a multivariate normal distribution would yield higher VIFs than just two.
+
+Put that to the test. You don't have to stick to the golden toads example here. 
+
+There's no worked answer, but to get you started, here's what the correlation matrix would need to look like for four predictors. The rest of the code you need is the same as above.
+
+::: {.panel-tabset group="language"}
+## R
+
+```{r, simulating quadravariate norm}
+rho12 <- 0.7
+rho13 <- 0.3
+rho14 <- -0.1
+rho23 <- 0.4
+rho24 <- -0.2
+rho34 <- 0.5
+
+cor_matrix <- matrix(c(1, rho12, rho13, rho14,   
+                     	 rho12, 1, rho23, rho24,
+                       rho13, rho23, 1, rho34,
+                       rho14, rho24, rho34, 1), 
+                nrow = 4, byrow = TRUE)
+
+vars <- mvrnorm(n, mu=c(0, 0, 0, 0), Sigma=cor_matrix)
+```
+
+## Python
+
+```{python, quadravariate norm sim}
+rho12 = 0.7
+rho13 = 0.3
+rho14 = -0.1
+rho23 = 0.4
+rho24 = -0.2
+rho34 = 0.5
+
+cov_mat = [[1, rho12, rho13, rho14], 
+           [rho12, 1, rho23, rho24],
+           [rho13, rho23, 1, rho34],
+           [rho14, rho24, rho34, 1]]
+
+z = np.random.multivariate_normal(mean = [0, 0, 0, 0], cov = cov_mat, size = n)
+```
+:::
+:::
+
+
+
+## Summary
+
+
+
+::: {.callout-tip}
+#### Key Points
+
+-   Collinear predictors are predictor variables with "functional/linear dependence", i.e., variables containing a lot of the same information
+-   We can test for collinearity by measuring the Variance Inflation Factor (VIF) and looking at correlations between predictors
+-   We can simulate continuous collinear predictors by using the multivariate normal distribution or generating one variable as a function of another
+:::
